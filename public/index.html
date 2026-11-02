@@ -1606,7 +1606,8 @@ const SES = (() => {
     { k: 'D', name: 'Durs',    col: '#f1eee6', peak: 0.95, wear: 0.55, lo: 80, hi: 115 },
     { k: 'P', name: 'Pluie',   col: '#3aa0ff', peak: 1.00, wear: 0.80, lo: 40, hi: 75, dryPeak: 0.90, dryWear: 2.6 },
   ];
-  const WEAR_M = 0.72 / (14 * 467 * 1.52);     // tendres : début de la chute (72 % d'usure) vers le 14e tour (calibré au pilote automatique)
+  const WEAR_M = 0.75 / (10 * 467 * 1.52);     // tendres bien préservés : 75 % d'usure au 10e tour (≈ moitié du GP) ; durs (×0,55) : ≈ 18e tour
+  const DRIFT_WEAR = 7;                        // un drift multiplie l'usure par ~8-9 (≈ 3 % de pneus par virage drifté, surtout à l'arrière)
   const CLIFF = .72;
   const V_SLIDE_IN = 7.6, V_SLIDE_OUT = 6.9;   // slicks sur piste mouillée : glissade en virage au-delà de ~27 km/h
   const FORM_V = 12.5, PIT_V = 8.33, BUENO_KMH = 5;
@@ -1670,7 +1671,7 @@ const SES = (() => {
     const cool = (t.temp - amb())*(.03 + .003*v)*(isWet() ? 2 : 1);
     t.temp = Math.max(-5, Math.min(160, t.temp + (heat - cool)*dt));
     if (!strict() || S.svc) return;
-    const C = CP[t.cp], mult = 1 + 3.5*Math.min(1, Math.abs(slip)/.5) + (st.drift ? 2 : 0) + 1.5*S.slide;
+    const C = CP[t.cp], mult = 1 + 3.5*Math.min(1, Math.abs(slip)/.5) + (st.drift ? DRIFT_WEAR : 0) + 1.5*S.slide;
     const hot = t.temp > C.hi ? 1 + .06*(t.temp - C.hi) : 1, comp = t.cp === 2 && !isWet() ? C.dryWear : C.wear;
     const was = t.wear;
     // répartition sur les 4 pneus (moyenne conservée) : extérieurs en virage, avant au freinage, arrière en glisse
