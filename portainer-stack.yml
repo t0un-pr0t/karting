@@ -1,0 +1,26 @@
+# Stack Portainer (éditeur web) quand l'image minikart-multi:2.0 a déjà été construite
+# via Portainer > Images > Build a new image (voir README).
+services:
+  minikart:
+    image: minikart-multi:2.0
+    pull_policy: never
+    restart: unless-stopped
+    ports:
+      - "9595:9595"
+    environment:
+      PORT: "9595"
+      MAX_PLAYERS: "12"
+      SESSION_MIN: "25"
+      FP_MIN: "5"
+      QUALI_MIN: "3"
+      GP_MIN: "10"
+      WEATHER: "auto"
+      RAIN_CHANCE: "0.4"
+      MIN_LAP_MS: "20000"
+      RESTORE_MS: "40000"
+      TZ: Europe/Paris
+    volumes:
+      - minikart-data:/data
+
+volumes:
+  minikart-data:

@@ -1,0 +1,17 @@
+{
+  "name": "minikart-multi",
+  "version": "2.0.0",
+  "description": "Mini Kart 3D – New Kart Migné-Auxances (sens inverse), version multijoueur",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "three": "0.128.0",
+    "ws": "^8.18.0"
+  }
+}

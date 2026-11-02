@@ -1,0 +1,25 @@
+# Mini Kart 3D — Grand Prix multijoueur · stack Portainer (méthode « Repository ») ou docker compose up -d --build
+services:
+  minikart:
+    build: .
+    image: minikart-multi:2.0
+    restart: unless-stopped
+    ports:
+      - "9595:9595"
+    environment:
+      PORT: "9595"
+      MAX_PLAYERS: "12"        # pilotes simultanés (16 au plus sur la grille)
+      SESSION_MIN: "25"        # durée d'une session complète
+      FP_MIN: "5"              # essais libres
+      QUALI_MIN: "3"           # qualifications
+      GP_MIN: "10"             # Grand Prix (puis drapeau au passage du leader)
+      WEATHER: "auto"          # auto (aléatoire) | sec | pluie
+      RAIN_CHANCE: "0.4"       # probabilité de pluie par session en mode auto
+      MIN_LAP_MS: "20000"      # un tour plus court est ignoré (anti-triche)
+      RESTORE_MS: "40000"      # délai avant la remise en place des boudins par les commissaires
+      TZ: Europe/Paris
+    volumes:
+      - minikart-data:/data    # records des meilleurs tours (records.json)
+
+volumes:
+  minikart-data:
