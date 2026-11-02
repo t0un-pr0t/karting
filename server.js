@@ -253,7 +253,7 @@ function onRaceLap(p, m) {
   const n = m.n | 0; if (n !== pt.n + 1) return;                     // tours dans l'ordre, sans doublon
   const now = Date.now(), ms = num(m.ms, 3600000);
   pt.n = n;
-  if (n > 1 && ms >= MIN_LAP_MS * 0.85) pt.best = pt.best == null ? ms : Math.min(pt.best, ms);
+  if (n > 1 && !m.bad && ms >= MIN_LAP_MS * 0.85) pt.best = pt.best == null ? ms : Math.min(pt.best, ms);
   if (!r.cheq && now >= r.go + GP_MS) {                               // temps écoulé : drapeau à damier au passage du leader
     const others = [...r.parts.values()].filter(q => q !== pt && !q.left).map(q => q.n);
     if (!others.length || pt.n >= Math.max(...others)) r.cheq = now;
