@@ -39,7 +39,7 @@ kbd{background:#0006;border:1px solid #fff4;border-radius:3px;padding:0 5px;font
 @media(max-width:700px){#help{display:none}#speedo{left:12px;transform:none;bottom:calc(12px + env(safe-area-inset-bottom,0px))}#drift{left:12px;transform:none;bottom:calc(120px + env(safe-area-inset-bottom,0px))}}
 
 /* ---- multijoueur ---- */
-#mp{top:calc(12px + env(safe-area-inset-top,0px));right:12px;padding:8px 12px 10px;width:260px;font-size:13px;max-height:calc(100% - 215px);overflow:auto}
+#mp{top:calc(12px + env(safe-area-inset-top,0px));right:12px;padding:8px 12px 10px;width:260px;font-size:13px;max-height:calc(100% - 380px);overflow:auto}
 #mph{display:flex;align-items:center;gap:7px;color:var(--dim)}
 .dot{width:8px;height:8px;border-radius:50%;background:#888;flex:none}.dot.on{background:#38e07b;box-shadow:0 0 6px #38e07b}.dot.off{background:#ff453a}
 .mpt{margin:9px 0 3px;font:italic 800 15px 'Barlow Condensed',Impact,sans-serif;letter-spacing:.6px;text-transform:uppercase;color:var(--hot)}
@@ -95,6 +95,16 @@ kbd{background:#0006;border:1px solid #fff4;border-radius:3px;padding:0 5px;font
 #tw{flex:1;height:6px;background:#0005;display:block;min-width:30px}
 #twf{display:block;height:100%;width:100%;background:#38e07b}
 #ttp{min-width:38px;text-align:right;font-variant-numeric:tabular-nums}
+#tyre{display:none !important}
+#t4{right:12px;bottom:calc(184px + env(safe-area-inset-bottom,0px));padding:7px 12px 8px;font-size:12px;color:var(--dim);min-width:104px}
+.t4h{display:flex;justify-content:space-between;gap:10px}.t4h b{color:var(--ink)}#t4t{font-variant-numeric:tabular-nums}
+.t4g{display:grid;grid-template-columns:auto auto;column-gap:24px;row-gap:12px;justify-content:center;margin-top:7px}
+.tc{display:flex;flex-direction:column;align-items:center;gap:2px}.tc small{font-size:11px;font-variant-numeric:tabular-nums}
+.tw{position:relative;overflow:hidden;border-radius:6px;box-sizing:border-box;border-left:4px solid #ff4a3d;border-right:4px solid #ff4a3d;box-shadow:0 0 0 1px #fff4;
+  background:#151317 repeating-linear-gradient(0deg,transparent 0 5px,#ffffff14 5px 7px)}
+.tw.f{width:22px;height:38px}.tw.r{width:30px;height:44px}
+.tw i{position:absolute;left:0;right:0;top:0;height:0;background:#9b8f86b0}
+@media(max-width:700px){#t4{transform:scale(.8);transform-origin:bottom right}}
 #tnx{display:none;margin-top:4px;font-size:12px;color:#ffd23f;white-space:normal}
 #slide{bottom:calc(205px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);padding:4px 14px;font-size:26px;color:#5cc8ff;display:none}
 #speedo{width:270px;z-index:2}
@@ -124,6 +134,10 @@ kbd{background:#0006;border:1px solid #fff4;border-radius:3px;padding:0 5px;font
   <div class="jn" id="jnote"></div>
 </form></div>
 <canvas id="minimap" class="p" width="200" height="160"></canvas>
+<div id="t4" class="p"><div class="t4h"><b id="t4c">Tendres</b><span id="t4t"></span></div><div class="t4g">
+<div class="tc"><div class="tw f" id="tw0"><i></i></div><small id="tl0"></small></div><div class="tc"><div class="tw f" id="tw1"><i></i></div><small id="tl1"></small></div>
+<div class="tc"><div class="tw r" id="tw2"><i></i></div><small id="tl2"></small></div><div class="tc"><div class="tw r" id="tw3"><i></i></div><small id="tl3"></small></div>
+</div></div>
 
 <script src="three.min.js"></script>
 <script>window.THREE || document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>')</script>
@@ -1085,7 +1099,7 @@ function rearWheel(s) { // position monde de la roue arrière (s = ±1)
 /* 5. ÉTAT + PHYSIQUE ARCADE AVEC DRIFT */
 const st = { x: PATH[0][0], y: PATH[0][1], th: START_TH, vd: START_TH, v: 0, lap: 0, lapStart: null, best: null, armed: false, off: false, camMode: 0,
   hold: 0, holdDir: 0, drift: 0, rel: 0, roll: 0 };
-const ACCEL = 9.5, BRAKE = 14, MAXV = 19.5, MAXRV = 4, DRAG = .55, GRASS_DRAG = 2.6, GRASS_MAX = 5.5, STEER = 2.3, HB_DRAG = 5;
+const ACCEL = 9.5, BRAKE = 14, MAXV = 19.5, MAXRV = 4, DRAG = .55, GRASS_DRAG = 2.6, GRASS_MAX = 5.5, STEER = 2.3, HB_DRAG = 5, HB_DEC = 4.5;   // HB_DRAG : kart immobilisé · HB_DEC : frein à main (m/s², roues arrière)
 const DRIFT_SPEED = MAXV*.72, DRIFT_HOLD = .8, MAX_SLIP = .62;
 const keys = {};
 addEventListener('keydown', e => {
@@ -1598,7 +1612,7 @@ const SES = (() => {
   const FORM_V = 12.5, PIT_V = 8.33, BUENO_KMH = 5;
   const S = {
     phase: 'solo', id: 0, t0: 0, end: 0, ps: 0, pe: 0, wx: [], grid: [], q: [], qEnd: 0, lights: null, race: null, res: null,
-    tyre: { cp: 0, wear: 0, temp: 22 }, next: 0, nextSet: false, svc: null, svcArmed: true, inLane: false, onPit: false,
+    tyre: { cp: 0, wear: 0, temp: 22, ww: [0, 0, 0, 0] }, next: 0, nextSet: false, svc: null, svcArmed: true, inLane: false, onPit: false,
     r: null, bueno: false, lapBad: 0, slide: 0, wet: 0, rain: 0, lastLamp: -1, lastUi: 0, prevTh: 0, overlay: '', joined: false, myFin: false,
   };
   const srv = () => MP.srvNow();
@@ -1646,7 +1660,7 @@ const SES = (() => {
     if (S.bueno) { const T = ACCEL/(DRAG*kr*(st.dmg ? 1/.9 : 1)); k *= T/Math.max(1, T - BUENO_KMH/3.6); }
     return k;
   }
-  function freshTyres(cp, temp) { S.tyre = { cp, wear: 0, temp }; }
+  function freshTyres(cp, temp) { S.tyre = { cp, wear: 0, temp, ww: [0, 0, 0, 0] }; }
   function defaultCp() { return S.nextSet ? S.next : (isWet() ? 2 : 0); }
   function tyreUpdate(dt, slip, brk) {
     if (dt <= 0) return;
@@ -1659,7 +1673,14 @@ const SES = (() => {
     const C = CP[t.cp], mult = 1 + 3.5*Math.min(1, Math.abs(slip)/.5) + (st.drift ? 2 : 0) + 1.5*S.slide;
     const hot = t.temp > C.hi ? 1 + .06*(t.temp - C.hi) : 1, comp = t.cp === 2 && !isWet() ? C.dryWear : C.wear;
     const was = t.wear;
-    t.wear = Math.min(1, t.wear + v*dt*WEAR_M*comp*mult*hot);
+    // répartition sur les 4 pneus (moyenne conservée) : extérieurs en virage, avant au freinage, arrière en glisse
+    const inc = v*dt*WEAR_M*comp*mult*hot, lat = Math.min(1, aLat/14), side = Math.sign(yaw), sl = Math.min(1, Math.abs(slip)/.5);
+    const f = [0, 1, 2, 3].map(k => {
+      const left = k % 2 === 0, front = k < 2, outer = side > 0 ? !left : side < 0 ? left : false;
+      return (side ? (outer ? 1 + .7*lat : 1 - .45*lat) : 1) * (brk ? (front ? 1.35 : .8) : 1) * (front ? 1 : 1 + 1.2*sl + (st.drift ? .8 : 0));
+    }), fm = (f[0] + f[1] + f[2] + f[3])/4;
+    for (let k = 0; k < 4; k++) t.ww[k] = Math.min(1, t.ww[k] + inc*f[k]/fm);
+    t.wear = (t.ww[0] + t.ww[1] + t.ww[2] + t.ww[3])/4;
     if (was < CLIFF && t.wear >= CLIFF) toast('⚠ Pneus ' + CP[t.cp].name.toLowerCase() + ' en fin de vie : l’adhérence chute, pensez au stand');
   }
   function slideUpdate(dt, steer) {       // slicks sur piste mouillée : glissade en virage au-delà de ~27 km/h
@@ -1974,6 +1995,16 @@ const SES = (() => {
     const t = S.tyre, C = CP[t.cp], w = Math.round(t.wear*100), T = Math.round(t.temp);
     const tag = $('tcp'); tag.textContent = C.k; tag.style.borderColor = C.col; tag.title = C.name;
     $('tnm').textContent = C.name;
+    { const band = ['#ff4a3d', '#0a0a0c', '#3aa0ff'][t.cp], ww = t.ww || [t.wear, t.wear, t.wear, t.wear];
+      $('t4c').textContent = C.name; $('t4c').style.color = t.cp === 1 ? 'var(--ink)' : C.col;
+      const tt = $('t4t'); tt.textContent = T + ' °C'; tt.style.color = T < C.lo ? '#7fb8ff' : T > C.hi ? '#ff6b5a' : '#9be89b';
+      for (let k = 0; k < 4; k++) {
+        const w4 = ww[k], tw = $('tw' + k), lb = $('tl' + k);
+        tw.style.borderLeftColor = tw.style.borderRightColor = band;
+        tw.firstChild.style.height = Math.round(Math.min(1, w4)*100) + '%';
+        lb.textContent = strict() ? Math.round(w4*100) + ' %' : '—';
+        lb.style.color = w4 < .5 ? '#38e07b' : w4 < CLIFF ? '#ffd23f' : '#ff453a';
+      } }
     const f = $('twf'); f.style.width = Math.max(2, 100 - w) + '%'; f.style.background = t.wear < .5 ? '#38e07b' : t.wear < CLIFF ? '#ffd23f' : '#ff453a';
     $('twp').textContent = strict() ? 'usure ' + w + ' %' : 'sans usure';
     const te = $('ttp'); te.textContent = T + ' °C'; te.style.color = T < C.lo ? '#7fb8ff' : T > C.hi ? '#ff6b5a' : '#9be89b';
@@ -2110,7 +2141,8 @@ function animate(now) {
   if (up) st.v = Math.min(st.v + ACCEL*SES.accMul()*thr*dt, MAXV);
   if (dn) st.v = st.v > .3 ? Math.max(st.v - BRAKE*dt, 0) : Math.max(st.v - ACCEL*.7*dt, -MAXRV);
   st.v -= st.v*DRAG*(st.dmg ? 1/.9 : 1)*SES.dragMul()*dt;   // aileron cassé −10 % · pneus pluie −15 % · boulet −5 km/h
-  if (hb) st.v -= st.v*HB_DRAG*dt;
+  if (frz) st.v -= st.v*HB_DRAG*dt;
+  else if (hb) st.v = Math.sign(st.v)*Math.max(0, Math.abs(st.v) - HB_DEC*dt);
   if (Math.abs(st.v) < .02 && !up && !dn) st.v = 0;
   { const vc = SES.speedCap(); if (st.v > vc) st.v = Math.max(vc, st.v - 30*dt); }   // limiteurs : stand 30 km/h, formation 45 km/h
 
