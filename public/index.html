@@ -105,11 +105,11 @@ kbd{background:#0006;border:1px solid #fff4;border-radius:3px;padding:0 5px;font
 </head>
 <body>
 <canvas id="game"></canvas>
-<div id="tower" class="p"><small>Tour <b id="lap">0</b></small><div class="t n" id="time">--:--.---</div><small>Meilleur <span id="best">--:--.---</span></small><br><small>Dumplings <b id="dump">0</b></small><br><small id="rpos"></small><small id="dmgi"></small></div>
+<div id="tower" class="p"><small>Tour <b id="lap">0</b></small><div class="t n" id="time">--:--.---</div><small>Meilleur <span id="best">--:--.---</span></small><br><small id="rpos"></small><small id="dmgi"></small></div>
 <div id="off" class="p n">Hors piste</div>
 <div id="drift" class="p"><span class="n" id="dtxt">Drift</span><i><b id="dbar"></b></i></div>
-<div id="speedo" class="p"><span id="speed" class="n">0</span><small>km/h</small><div id="bar"><div id="fill"></div></div><div id="adv" class="n"></div><div id="gbar"><i id="gfill"></i></div><div id="bk" class="n"></div><div id="tyre"><b id="tcp" class="n">T</b><span id="tnm"></span><i id="tw"><b id="twf"></b></i><span id="twp"></span><span id="ttp"></span></div><div id="tnx"></div></div>
-<div id="help" class="p"><kbd>Z</kbd>/<kbd>↑</kbd> accélérer · <kbd>S</kbd>/<kbd>↓</kbd> frein · <kbd>Q</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> braquer<br>Braquage tenu à vive allure = drift auto · ramasse les dumplings (doré = ×5)<br><kbd>Espace</kbd> frein à main · <kbd>C</kbd> caméra · <kbd>L</kbd> ligne de course · <kbd>R</kbd> reset<br><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> choix des pneus · changement au stand (zone jaune)<br>Manette : stick/croix · RT gaz · LT frein · X frein à main · Y caméra · Start reset</div>
+<div id="speedo" class="p"><span id="speed" class="n">0</span><small>km/h</small><div id="bar"><div id="fill"></div></div><div id="adv" class="n" style="display:none"></div><div id="gbar"><i id="gfill"></i></div><div id="bk" class="n"></div><div id="tyre"><b id="tcp" class="n">T</b><span id="tnm"></span><i id="tw"><b id="twf"></b></i><span id="twp"></span><span id="ttp"></span></div><div id="tnx"></div></div>
+<div id="help" class="p"><kbd>Z</kbd>/<kbd>↑</kbd> accélérer · <kbd>S</kbd>/<kbd>↓</kbd> frein · <kbd>Q</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> braquer<br>Braquage tenu à vive allure = drift auto<br><kbd>Espace</kbd> frein à main · <kbd>C</kbd> caméra · <kbd>R</kbd> reset<br><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> choix des pneus · changement au stand (zone jaune)<br>Manette : stick/croix · RT gaz · LT frein · X frein à main · Y caméra · Start reset</div>
 <div id="mp" class="p"><div id="mph"><span class="dot"></span><span id="mpst">Hors ligne</span></div><div id="mpl"></div></div>
 <div id="sess" class="p"><span id="sph" class="n"></span><span id="stm" class="n"></span><span id="swx"></span></div>
 <div id="lights" aria-label="Feux de départ"><i></i><i></i><i></i><i></i><i></i></div>
@@ -281,14 +281,14 @@ const lineGeo = ribbon(LX.map((x, i) => [x, LY[i]]), -.27, .27, (i, w) => .075 +
   lineGeo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
 }
 const lineMesh = new THREE.Mesh(lineGeo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: .9, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
-lineMesh.renderOrder = 2; scene.add(lineMesh);
+lineMesh.renderOrder = 2;   // ligne de course retirée de la piste
 const brakeMarks = [];
 for (let i = 0; i < LX.length; i++) if (LS[i] === 'B' && LS[(i-1+LX.length)%LX.length] !== 'B') {
   const j = (i+1) % LX.length, ang = Math.atan2(LY[j]-LY[i], LX[j]-LX[i]);
   const bg = new THREE.PlaneGeometry(.35, 6.2), bPos = bg.attributes.position, bb = bankB(SLINE[i]);
   for (let k = 0; k < bPos.count; k++) bPos.setZ(k, bankDy(bb, LN[i] + bPos.getY(k)) - bankDy(bb, LN[i]));   // la barre épouse la pente
   const m = new THREE.Mesh(bg, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
-  m.rotation.x = -Math.PI/2; m.rotation.z = ang; m.position.set(LX[i], .09 + bankDy(bankB(SLINE[i]), LN[i]), -LY[i]); m.renderOrder = 3; scene.add(m); brakeMarks.push(m);
+  m.rotation.x = -Math.PI/2; m.rotation.z = ang; m.position.set(LX[i], .09 + bankDy(bankB(SLINE[i]), LN[i]), -LY[i]); m.renderOrder = 3; brakeMarks.push(m);
 }
 
 const curbTex = tex(8, 64, (g, w, h) => { g.fillStyle = '#d93025'; g.fillRect(0,0,w,h/2); g.fillStyle = '#f4efe6'; g.fillRect(0,h/2,w,h/2); });
@@ -1247,14 +1247,13 @@ function drawMinimap() {
 }
 
 /* 6b. COACH DE LIGNE */
-let LINE_ON = true, li = 0;
+let LINE_ON = false, li = 0;
 const VMIN_L = Math.min(...LV), VMAX_L = Math.max(...LV);
 const lcol = v => { const t = Math.max(0, Math.min(1, (v-VMIN_L)/(VMAX_L-VMIN_L))); return t < .5 ? [1, .27+.55*t*2, .22+.03*t*2] : [1-.78*(t-.5)*2, .82+.06*(t-.5)*2, .25+.23*(t-.5)*2]; };
 const LHEX = { G: '#38e07b', L: '#ffd23f', B: '#ff453a' }, LTXT = { G: 'GAZ', L: 'LEVER', B: 'FREINER' };
 const hexOf = v => '#' + lcol(v).map(c => Math.round(c*255).toString(16).padStart(2, '0')).join('');
 const LBIN = LV.map(v => Math.round((v-VMIN_L)/(VMAX_L-VMIN_L)*7));
 const LRUNS = []; for (let i = 0, a = 0; i < LX.length; i++) if (i === LX.length-1 || LBIN[i+1] !== LBIN[i]) { LRUNS.push({ a, b: i, c: hexOf(VMIN_L + LBIN[i]/7*(VMAX_L-VMIN_L)) }); a = i+1; }
-addEventListener('keydown', e => { if (e.target && e.target.tagName === 'INPUT') return; if (e.code === 'KeyL') { LINE_ON = !LINE_ON; lineMesh.visible = LINE_ON; brakeMarks.forEach(m => m.visible = LINE_ON); $('adv').style.display = LINE_ON ? 'block' : 'none'; } });
 function updateAdvice() {
   if (SES.isWet()) { const el = $('adv'); el.textContent = SES.compound() === 2 ? 'PISTE MOUILLÉE' : 'SLICKS : GLISSADE > 27 km/h'; el.style.color = '#5cc8ff'; return; }
   const n = LX.length; let best = Infinity, bj = li;
@@ -2216,7 +2215,6 @@ function animate(now) {
   sky.position.copy(camera.position);
   sun.target.position.copy(kart.position); sun.position.copy(kart.position).add(SUNOFF);
 
-  updateDumplings(now, dt);
   TIRES.update(now, dt); DMG.update(dt);
   SES.update(now, dt, idx, steer, slip, dn);
   MP.update(now, dt, idx, steer);
