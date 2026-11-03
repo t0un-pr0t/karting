@@ -33,6 +33,9 @@ canvas#game{display:block;width:100%;height:100%}
 #drift.on #dbar{background:var(--drift);width:100%!important}
 #drift.on .n{color:var(--drift)}
 #off{top:calc(14px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);padding:4px 14px;color:#ff8a70;font-size:22px;display:none}
+/* vue casque : bords du casque, reflet de visière */
+#visor{position:absolute;inset:0;pointer-events:none;display:none;background:radial-gradient(ellipse 78% 64% at 50% 50%,transparent 74%,rgba(8,8,12,.75) 88%,#060609 97%),linear-gradient(170deg,rgba(150,190,255,.10),transparent 35%,transparent 70%,rgba(20,30,60,.12))}
+#visor::after{content:'';position:absolute;left:-5%;right:-5%;top:0;height:12%;background:linear-gradient(#0a0a0e,rgba(10,10,14,.6) 60%,transparent);border-radius:0 0 50% 50%/0 0 100% 100%}
 #help{bottom:calc(12px + env(safe-area-inset-bottom,0px));left:12px;padding:8px 12px;font-size:12px;line-height:1.6;color:var(--dim)}
 #minimap{bottom:calc(12px + env(safe-area-inset-bottom,0px));right:12px}
 kbd{background:#0006;border:1px solid #fff4;border-radius:3px;padding:0 5px;font:inherit;font-size:11px;color:var(--ink)}
@@ -116,11 +119,12 @@ kbd{background:#0006;border:1px solid #fff4;border-radius:3px;padding:0 5px;font
 </head>
 <body>
 <canvas id="game"></canvas>
+<div id="visor"></div>
 <div id="tower" class="p"><small>Tour <b id="lap">0</b></small><div class="t n" id="time">--:--.---</div><small>Meilleur <span id="best">--:--.---</span></small><br><small id="rpos"></small><small id="dmgi"></small></div>
 <div id="off" class="p n">Hors piste</div>
 <div id="drift" class="p"><span class="n" id="dtxt">Drift</span><i><b id="dbar"></b></i></div>
 <div id="speedo" class="p"><span id="speed" class="n">0</span><small>km/h</small><div id="bar"><div id="fill"></div></div><div id="adv" class="n" style="display:none"></div><div id="gbar"><i id="gfill"></i></div><div id="bk" class="n"></div><div id="tyre"><b id="tcp" class="n">T</b><span id="tnm"></span><i id="tw"><b id="twf"></b></i><span id="twp"></span><span id="ttp"></span></div><div id="tnx"></div></div>
-<div id="help" class="p"><kbd>Z</kbd>/<kbd>↑</kbd> accélérer · <kbd>S</kbd>/<kbd>↓</kbd> frein · <kbd>Q</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> braquer<br>Braquage tenu à vive allure = drift auto<br><kbd>Espace</kbd> frein à main · <kbd>C</kbd> caméra · <kbd>R</kbd> reset<br><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> choix des pneus · changement au stand (zone jaune)<br>Manette : stick/croix · RT gaz · LT frein · X frein à main · Y caméra · Start reset</div>
+<div id="help" class="p"><kbd>Z</kbd>/<kbd>↑</kbd> accélérer · <kbd>S</kbd>/<kbd>↓</kbd> frein · <kbd>Q</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> braquer<br>Braquage tenu à vive allure = drift auto<br><kbd>Espace</kbd> frein à main · <kbd>C</kbd> caméra (poursuite, dessus, casque) · <kbd>R</kbd> reset<br><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> choix des pneus · changement au stand (zone jaune)<br>Manette : stick/croix · RT gaz · LT frein · X frein à main · Y caméra · Start reset</div>
 <div id="mp" class="p"><div id="mph"><span class="dot"></span><span id="mpst">Hors ligne</span></div><div id="mpl"></div></div>
 <div id="sess" class="p"><span id="sph" class="n"></span><span id="stm" class="n"></span><span id="swx"></span></div>
 <div id="lights" aria-label="Feux de départ"><i></i><i></i><i></i><i></i><i></i></div>
@@ -1206,6 +1210,7 @@ function buildKart(color = 0xd01f1f, num = '2', suit = 0x1b4fa8) {
   return root;
 }
 let kart = buildKart(); scene.add(kart);
+const EYE = new THREE.Vector3(), EYE_UP = new THREE.Vector3(), EYE_AT = new THREE.Vector3(), VISOR = { on: false };
 /* DÉGÂTS : aileron avant (nez + pare-chocs) cassé lors d'un choc frontal à plus de 25 km/h.
    Effet : traînée accrue, vitesse max −10 %. Réparation : au stand, ou R en essais libres et pendant la pause. */
 function setKartDamage(root, on) {
@@ -1295,7 +1300,7 @@ addEventListener('keydown', e => {
   if (e.target && e.target.tagName === 'INPUT') return;
   keys[e.code] = true;
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
-  if (e.code === 'KeyC') st.camMode ^= 1;
+  if (e.code === 'KeyC') st.camMode = (st.camMode + 1) % 3;   // poursuite → dessus → casque
   if (e.code === 'KeyR') resetKart();
 });
 addEventListener('keyup', e => keys[e.code] = false);
@@ -1311,7 +1316,7 @@ function readPad() {
   r.steer = (Math.abs(ax) < .15 ? 0 : -ax) + btn(14) - btn(15);
   r.thr = Math.max(btn(7), btn(0)); r.brk = Math.max(btn(6), btn(1));
   r.hb = btn(2) > .5 || btn(4) > .5 || btn(5) > .5; r.gp = gp;
-  if (edge(3)) st.camMode ^= 1;
+  if (edge(3)) st.camMode = (st.camMode + 1) % 3;
   if (edge(9)) resetKart();
   return r;
 }
@@ -2665,10 +2670,17 @@ function animate(now) {
     const tg = kart.position.clone().addScaledVector(fwd, -8.5).add(new THREE.Vector3(0, 3.2, 0));
     camPos.lerp(tg, 1 - Math.exp(-5*dt)); camera.position.copy(camPos);
     camera.lookAt(kart.position.x + fwd.x*2, .8 + kart.position.y, kart.position.z + fwd.z*2);
-  } else {
+  } else if (st.camMode === 1) {
     camera.position.set(kart.position.x + .01, 60, kart.position.z + 12); camera.lookAt(kart.position.x, 0, kart.position.z);
+  } else {                                                  // casque : l'œil derrière la visière, le kart penche et tangue avec lui
+    const body = kart.userData.body; body.updateMatrixWorld(true);
+    camera.position.copy(body.localToWorld(EYE.set(-.27, .92, 0))); camPos.copy(camera.position);
+    camera.up.copy(body.localToWorld(EYE_UP.set(-.27, 1.92, 0)).sub(camera.position));
+    camera.lookAt(body.localToWorld(EYE_AT.set(6, .55, 0)));
   }
-  const fov = 62 + Math.abs(st.v)/MAXV*10 + (st.drift ? 4 : 0);
+  if (st.camMode !== 2) camera.up.set(0, 1, 0);
+  if (VISOR.on !== (st.camMode === 2)) { VISOR.on = st.camMode === 2; $('visor').style.display = VISOR.on ? 'block' : 'none'; camera.near = VISOR.on ? .05 : .1; }
+  const fov = (st.camMode === 2 ? 70 : 62) + Math.abs(st.v)/MAXV*10 + (st.drift ? 4 : 0);
   camera.fov += (fov - camera.fov)*Math.min(1, 4*dt); camera.updateProjectionMatrix();
   sky.position.copy(camera.position);
   sun.target.position.copy(kart.position); sun.position.copy(kart.position).add(SUNOFF);
