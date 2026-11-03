@@ -201,10 +201,44 @@ function bankAt(x, y, i) {
 /* 2. SCÈNE — lumière rasante de fin de journée */
 const canvas = document.getElementById('game');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+/* Résolution adaptative : on part de 1,5× au plus et on descend jusqu'à 0,75× si le jeu tombe sous ~45 i/s. */
+const PR = { max: Math.min(devicePixelRatio, 1.5), cur: Math.min(devicePixelRatio, 1.5), acc: 0, n: 0, good: 0 };
+renderer.setPixelRatio(PR.cur);
+function adaptRes(dt) {
+  PR.acc += dt; PR.n++; if (PR.acc < 1) return;
+  const avg = PR.acc/PR.n; PR.acc = 0; PR.n = 0;
+  if (avg > 1/45 && PR.cur > .75) { PR.cur = Math.max(.75, PR.cur - .25); PR.good = 0; renderer.setPixelRatio(PR.cur); }
+  else if (avg < 1/57 && PR.cur < PR.max && ++PR.good >= 4) { PR.cur = Math.min(PR.max, PR.cur + .25); PR.good = 0; renderer.setPixelRatio(PR.cur); }
+}
+/* Décor immobile : fusionne tous les maillages d'un groupe par matériau (un appel de dessin par matériau au lieu d'un par objet). */
+function mergeStatic(root) {
+  root.updateMatrixWorld(true);
+  const bins = new Map(), out = new THREE.Group();
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    const k = o.material.uuid + (o.castShadow ? 'c' : '') + (o.receiveShadow ? 'r' : '');
+    if (!bins.has(k)) bins.set(k, { m: o.material, c: o.castShadow, r: o.receiveShadow, g: [] });
+    const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); g.applyMatrix4(o.matrixWorld); bins.get(k).g.push(g);
+  });
+  for (const b of bins.values()) {
+    const uv = b.g.every(g => g.attributes.uv), n = b.g.reduce((a, g) => a + g.attributes.position.count, 0), geo = new THREE.BufferGeometry();
+    for (const [name, sz] of [['position', 3], ['normal', 3], ...(uv ? [['uv', 2]] : [])]) {
+      const arr = new Float32Array(n*sz); let o = 0;
+      for (const g of b.g) { arr.set(g.attributes[name].array, o); o += g.attributes[name].array.length; }
+      geo.setAttribute(name, new THREE.BufferAttribute(arr, sz));
+    }
+    b.g.forEach(g => g.dispose()); geo.computeBoundingSphere();
+    const m = new THREE.Mesh(geo, b.m); m.castShadow = b.c; m.receiveShadow = b.r; m.matrixAutoUpdate = false; out.add(m);
+  }
+  return out;
+}
+/* Texte d'interface : n'écrit dans le DOM que si la valeur change (évite un recalcul de mise en page à chaque image). */
+{ const d = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent');
+  Object.defineProperty(Node.prototype, 'textContent', { configurable: true, enumerable: d.enumerable, get: d.get,
+    set(v) { const f = this.firstChild; if (f && !f.nextSibling && f.nodeType === 3 && f.data === String(v ?? '')) return; d.set.call(this, v); } }); }
 const scene = new THREE.Scene();
 const FOG = 0xe8b48a;
 scene.fog = new THREE.Fog(FOG, 70, 300);
@@ -712,13 +746,14 @@ const PITS = (() => {
   /* ---- auvent du stand, pneus en rack, panneau ---- */
   const SC0 = 24, SC1 = 42;
   {
+    const pitDeco = new THREE.Group();
     const white = M(0xeeeae2, .5), red = M(0xc62828, .5), post = M(0x9aa0a6, .35, .6);
     const [cx, cy, cth] = trackAt((SC0 + SC1)/2, -17);
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(SC1 - SC0 + 1, .16, 4.2), white); roof.position.set(cx, 2.95, -cy); roof.rotation.y = cth; roof.castShadow = true; scene.add(roof);
-    const band = new THREE.Mesh(new THREE.BoxGeometry(SC1 - SC0 + 1, .5, .08), red); band.position.copy(roof.position); band.rotation.y = cth; scene.add(band);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(SC1 - SC0 + 1, .16, 4.2), white); roof.position.set(cx, 2.95, -cy); roof.rotation.y = cth; roof.castShadow = true; pitDeco.add(roof);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(SC1 - SC0 + 1, .5, .08), red); band.position.copy(roof.position); band.rotation.y = cth; pitDeco.add(band);
     band.position.add(new THREE.Vector3(-Math.sin(cth)*2.1, -.3, -Math.cos(cth)*2.1));
     for (let s = SC0; s <= SC1 + .01; s += 6) for (const w of [15.1, 18.9]) {
-      const p = new THREE.Mesh(new THREE.CylinderGeometry(.07, .07, 2.9, 8), post); place(p, s, w, 1.45); p.castShadow = true; scene.add(p);
+      const p = new THREE.Mesh(new THREE.CylinderGeometry(.07, .07, 2.9, 8), post); place(p, s, w, 1.45); p.castShadow = true; pitDeco.add(p);
     }
     const sg = new THREE.Mesh(new THREE.PlaneGeometry(10, 1.1), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, map: tex(1024, 112, (g, w, h) => {
       const txt = 'STAND · MÉCANICIENS REPTILIENS'; let fs = 66;
@@ -726,7 +761,7 @@ const PITS = (() => {
       do { g.font = `italic bold ${fs}px sans-serif`; fs -= 2; } while (g.measureText(txt).width > w - 56 && fs > 30);
       g.fillText(txt, w/2, h/2 + 4);
     }) }));
-    sg.position.set(cx - Math.sin(cth)*2.2, 3.45, -cy - Math.cos(cth)*2.2); sg.rotation.y = cth + Math.PI; scene.add(sg);
+    sg.position.set(cx - Math.sin(cth)*2.2, 3.45, -cy - Math.cos(cth)*2.2); sg.rotation.y = cth + Math.PI; pitDeco.add(sg);
     // derrière les reptiliens : étagères de pneus sous couvertures chauffantes (liseré = gomme), radiateurs en fonte dessous
     const blanketG = new THREE.CylinderGeometry(.34, .34, .24, 16), bandG = new THREE.CylinderGeometry(.345, .345, .06, 16);
     const fabric = M(0x26262c, .95), steel = M(0x8d949b, .4, .7), iron = M(0x3b3532, .55, .55), copper = M(0xb0703a, .35, .7);
@@ -746,8 +781,9 @@ const PITS = (() => {
         for (const y of [.08, .46]) { const p = new THREE.Mesh(pipeG, iron); p.rotation.z = Math.PI/2; p.scale.y = 1.42; p.position.set(x0, y, 0); u.add(p); }
         const v = new THREE.Mesh(new THREE.CylinderGeometry(.03, .03, .1, 8), copper); v.position.set(x0 + .76, .1, 0); v.rotation.z = Math.PI/2; u.add(v);
       }
-      place(u, SC0 + 3.2 + k*4.6, 18.3, 0); scene.add(u);
+      place(u, SC0 + 3.2 + k*4.6, 18.3, 0); pitDeco.add(u);
     });
+    scene.add(mergeStatic(pitDeco));
   }
 
   /* ---- grille de départ : cases peintes ---- */
@@ -987,7 +1023,7 @@ const PITS = (() => {
   const trunk = new THREE.CylinderGeometry(.25, .35, 2, 6), cone = new THREE.ConeGeometry(1.8, 3.4, 8);
   const tm = new THREE.MeshLambertMaterial({ color: 0x6d4c2f });
   const lm = [0x2e6b2e, 0x3f7a35, 0x25592f, 0xb8662a].map(c => new THREE.MeshLambertMaterial({ color: c, flatShading: true }));
-  let placed = 0, guard = 0, seed = 7;
+  let placed = 0, guard = 0, seed = 7; const forest = new THREE.Group();
   const rnd = () => (seed = (seed*16807) % 2147483647)/2147483647;   // tirage fixe : mêmes arbres pour tous les joueurs
   while (placed < 70 && guard++ < 900) {
     const x = -70 + rnd()*260, y = -50 + rnd()*210;
@@ -999,8 +1035,9 @@ const PITS = (() => {
     const c = new THREE.Mesh(cone, mat); c.position.y = 4.9; c.scale.setScalar(.72); t.add(c);
     t.scale.setScalar(.8 + rnd()*.7); t.rotation.y = rnd()*6;
     t.position.set(x, 0, -y); t.traverse(o => o.castShadow = true);
-    scene.add(t); placed++;
+    forest.add(t); placed++;
   }
+  scene.add(mergeStatic(forest));
 }
 
 /* 4. KART SODI GT2 */
@@ -1341,7 +1378,7 @@ function updateDumplings(t, dt) {
 
 /* 6. HUD + MINIMAP */
 const $ = id => document.getElementById(id);
-const mm = $('minimap').getContext('2d');
+let mm = $('minimap').getContext('2d');
 const xs = PATH.map(p => p[0]), ys = PATH.map(p => p[1]);
 const bMinX = Math.min(...xs)-8, bMaxX = Math.max(...xs)+8, bMinY = Math.min(...ys)-8, bMaxY = Math.max(...ys)+8;
 const mmS = Math.min(190/(bMaxX-bMinX), 150/(bMaxY-bMinY));
@@ -1350,8 +1387,14 @@ function fmtTime(ms) {
   if (ms == null) return '--:--.---';
   return `${Math.floor(ms/60000)}:${String(Math.floor(ms/1000)%60).padStart(2,'0')}.${String(Math.floor(ms%1000)).padStart(3,'0')}`;
 }
+const mmBg = document.createElement('canvas'); mmBg.width = 200; mmBg.height = 160; let mmBgLine = null;
 function drawMinimap() {
   mm.clearRect(0, 0, 200, 160);
+  if (mmBgLine !== LINE_ON) { mmBgLine = LINE_ON; const mm0 = mm; mm = mmBg.getContext('2d'); mm.clearRect(0, 0, 200, 160); drawTrackLayer(); mm = mm0; }   // tracé figé, redessiné seulement si le coach change
+  mm.drawImage(mmBg, 0, 0);
+  drawLive();
+}
+function drawTrackLayer() {
   const path = () => { mm.beginPath(); PATH.forEach((p, i) => i ? mm.lineTo(mmX(p[0]), mmY(p[1])) : mm.moveTo(mmX(p[0]), mmY(p[1]))); mm.closePath(); };
   mm.lineJoin = 'round'; path(); mm.strokeStyle = '#eadfce'; mm.lineWidth = 7; mm.stroke();
   path(); mm.strokeStyle = '#2b2230'; mm.lineWidth = 5; mm.stroke();
@@ -1360,6 +1403,8 @@ function drawMinimap() {
   if (LINE_ON) { mm.lineWidth = 2; mm.lineCap = 'round';
     for (const r of LRUNS) { mm.strokeStyle = r.c; mm.beginPath(); for (let k = r.a; k <= r.b + 1; k++) { const j = k % LX.length; k === r.a ? mm.moveTo(mmX(LX[j]), mmY(LY[j])) : mm.lineTo(mmX(LX[j]), mmY(LY[j])); } mm.stroke(); } }
   mm.fillStyle = '#ffb02e'; mm.fillRect(mmX(0)-2.5, mmY(0)-1, 5, 2);
+}
+function drawLive() {
   for (const d of items) { if (d.pop >= 0) continue; mm.fillStyle = '#' + d.col.toString(16).padStart(6, '0'); mm.beginPath(); mm.arc(mmX(d.x), mmY(d.y), d.gold ? 3.5 : 2.6, 0, 7); mm.fill(); }
   MP.drawMinimap(mm);
   mm.save(); mm.translate(mmX(st.x), mmY(st.y)); mm.rotate(-st.th);
@@ -2582,6 +2627,7 @@ function animate(now) {
   if (LINE_ON) updateAdvice();
   updateGrip();
   drawMinimap();
+  adaptRes(dt);
   renderer.render(scene, camera);
 }
 resetKart();
