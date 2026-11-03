@@ -257,12 +257,18 @@ scene.add(ground);
 function ribbon(pts, w1, w2, y, vs, closed = true) {
   const yf = typeof y === 'function' ? y : () => y;
   const n = pts.length, cnt = closed ? n+1 : n, pos = [], uv = [], idx = []; let s = 0;
+  const last = [null, null];   // anti-repli : à l'intérieur d'un virage serré, un bord décalé reculerait et se replierait sur lui-même
+  const edge = (k, p, dx, dy, w) => {
+    let x = p[0] - dy*w, y = p[1] + dx*w; const l = last[k];
+    if (l && (x - l[0])*dx + (y - l[1])*dy < .02) { x = l[0]; y = l[1]; }
+    last[k] = [x, y]; return [x, y];
+  };
   for (let i = 0; i < cnt; i++) {
     const p = pts[i%n], a = pts[(i+1)%n], b = pts[(i-1+n)%n];
     if (i) { const q = pts[i-1]; s += Math.hypot(p[0]-q[0], p[1]-q[1]); }
     let dx = a[0]-b[0], dy = a[1]-b[1]; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
-    const nx = -dy, ny = dx;
-    pos.push(p[0]+nx*w1, yf(i%n, w1), -(p[1]+ny*w1), p[0]+nx*w2, yf(i%n, w2), -(p[1]+ny*w2));
+    const e1 = edge(0, p, dx, dy, w1), e2 = edge(1, p, dx, dy, w2);
+    pos.push(e1[0], yf(i%n, w1), -e1[1], e2[0], yf(i%n, w2), -e2[1]);
     uv.push(0, s/vs, 1, s/vs);
   }
   for (let i = 0; i < cnt-1; i++) { const a = 2*i; idx.push(a, a+2, a+1, a+1, a+2, a+3); }
@@ -273,7 +279,8 @@ function ribbon(pts, w1, w2, y, vs, closed = true) {
   geo.computeVertexNormals();
   return geo;
 }
-const L2 = (map) => new THREE.MeshLambertMaterial({ map, side: THREE.DoubleSide });
+const L2 = (map, po = 0) => new THREE.MeshLambertMaterial({ map, side: THREE.DoubleSide, polygonOffset: !!po, polygonOffsetFactor: po, polygonOffsetUnits: po*2 });
+// superposition au sol : asphalte < vibreurs (-1) < voie des stands (-2) < ligne de départ (-4)
 const asphalt = new THREE.Mesh(ribbon(PATH, -HALF_W, HALF_W, (i, w) => .02 + bankDy(bankB(SL[i]), w), 7), L2(tex(256, 256, (g, w, h) => {
   g.fillStyle = '#3c3b41'; g.fillRect(0,0,w,h);
   speckle(g,w,h,5000,['#48474d','#323136','#56545a'],2);
@@ -309,7 +316,7 @@ for (let i = 0; i < LX.length; i++) if (LS[i] === 'B' && LS[(i-1+LX.length)%LX.l
 const curbTex = tex(8, 64, (g, w, h) => { g.fillStyle = '#d93025'; g.fillRect(0,0,w,h/2); g.fillStyle = '#f4efe6'; g.fillRect(0,h/2,w,h/2); });
 for (const s of [1, -1]) {
   const a = s === 1 ? HALF_W : -(HALF_W+0.9), b = s === 1 ? HALF_W+0.9 : -HALF_W;
-  const m = new THREE.Mesh(ribbon(PATH, a, b, (i, w) => .035 + bankDy(bankB(SL[i]), w), 2.4), L2(curbTex));
+  const m = new THREE.Mesh(ribbon(PATH, a, b, (i, w) => .035 + bankDy(bankB(SL[i]), w), 2.4), L2(curbTex, -1));
   m.receiveShadow = true; scene.add(m);
 }
 function distToPath(x, y) {
@@ -323,7 +330,7 @@ const START_TH = Math.atan2(PATH[2][1]-PATH[0][1], PATH[2][0]-PATH[0][0]);
 {
   const ck = tex(14, 2, (g) => { for (let x = 0; x < 14; x++) for (let y = 0; y < 2; y++) { g.fillStyle = (x+y)%2 ? '#15121a' : '#fff'; g.fillRect(x,y,1,1); } });
   ck.magFilter = THREE.NearestFilter;
-  scene.add(new THREE.Mesh(ribbon(PATH.slice(0,3), -HALF_W, HALF_W, 0.05, 1, false), L2(ck)));
+  { const sl = new THREE.Mesh(ribbon(PATH.slice(0,3), -HALF_W, HALF_W, 0.05, 1, false), L2(ck, -4)); sl.renderOrder = 1; scene.add(sl); }
   const c = M2W(PATH[0][0], PATH[0][1]), n3 = new THREE.Vector3(-Math.sin(START_TH), 0, -Math.cos(START_TH));
   const poleMat = new THREE.MeshStandardMaterial({ color: 0xe6e0d6, roughness: .5, metalness: .4 });
   for (const s of [-1, 1]) {
@@ -681,16 +688,16 @@ const PITS = (() => {
     const lane = new THREE.Mesh(ribbon(pts, -HW, HW, .028, 7, false), L2(tex(256, 256, (g, w, h) => {
       g.fillStyle = '#45444a'; g.fillRect(0, 0, w, h); speckle(g, w, h, 4000, ['#504f55', '#3a393f', '#5a585e'], 2);
       g.fillStyle = 'rgba(240,236,226,.9)'; g.fillRect(4, 0, 6, h); g.fillRect(w - 10, 0, 6, h);
-    })));
+    }), -2));
     lane.receiveShadow = true; scene.add(lane);
     const sv = []; for (let s = SVC0; s <= SVC1 + .01; s += .5) sv.push(trackAt(s, -LANE));
-    const box = new THREE.Mesh(ribbon(sv, -1.9, 1.9, .034, SVC1 - SVC0, false), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, map: tex(256, 512, (g, w, h) => {
+    const box = new THREE.Mesh(ribbon(sv, -1.9, 1.9, .034, SVC1 - SVC0, false), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6, map: tex(256, 512, (g, w, h) => {
       g.strokeStyle = '#ffd23f'; g.lineWidth = 14; g.strokeRect(10, 10, w - 20, h - 20);
       g.save(); g.translate(w/2, h/2); g.rotate(Math.PI/2); g.fillStyle = 'rgba(255,210,63,.85)'; g.font = 'bold 120px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('STAND', 0, 0); g.restore();
     }) }));
     scene.add(box);
     for (const s of [LIM0, LIM1]) {                                              // lignes de début / fin de limiteur
-      const ln = new THREE.Mesh(new THREE.PlaneGeometry(.35, HW*2), new THREE.MeshBasicMaterial({ color: 0x3aa0ff }));
+      const ln = new THREE.Mesh(new THREE.PlaneGeometry(.35, HW*2), new THREE.MeshBasicMaterial({ color: 0x3aa0ff, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }));
       const [x, y, th] = trackAt(s, -LANE); ln.rotation.set(-Math.PI/2, 0, th); ln.position.set(x, .036, -y); scene.add(ln);
     }
     const sign = tex(128, 128, (g) => { g.fillStyle = '#fff'; g.beginPath(); g.arc(64, 64, 60, 0, 7); g.fill(); g.lineWidth = 12; g.strokeStyle = '#d01f1f'; g.beginPath(); g.arc(64, 64, 52, 0, 7); g.stroke();
@@ -965,15 +972,17 @@ const PITS = (() => {
   const trunk = new THREE.CylinderGeometry(.25, .35, 2, 6), cone = new THREE.ConeGeometry(1.8, 3.4, 8);
   const tm = new THREE.MeshLambertMaterial({ color: 0x6d4c2f });
   const lm = [0x2e6b2e, 0x3f7a35, 0x25592f, 0xb8662a].map(c => new THREE.MeshLambertMaterial({ color: c, flatShading: true }));
-  let placed = 0, guard = 0;
+  let placed = 0, guard = 0, seed = 7;
+  const rnd = () => (seed = (seed*16807) % 2147483647)/2147483647;   // tirage fixe : mêmes arbres pour tous les joueurs
   while (placed < 70 && guard++ < 900) {
-    const x = -70 + Math.random()*260, y = -50 + Math.random()*210;
+    const x = -70 + rnd()*260, y = -50 + rnd()*210;
     if (distToPath(x, y) < HALF_W + 9) continue;
-    const t = new THREE.Group(), mat = lm[Math.floor(Math.random()*lm.length)];
+    { const i = nearestPathIndex(x, y).i, p = PITS.locate(x, y, i); if (p.s > -10 && p.s < PITS.OUT1 + 12 && p.wr > 0 && p.wr < 30) continue; }   // pas d'arbre dans la voie des stands ni sur les stands
+    const t = new THREE.Group(), mat = lm[Math.floor(rnd()*lm.length)];
     const a = new THREE.Mesh(trunk, tm); a.position.y = 1; t.add(a);
     const b = new THREE.Mesh(cone, mat); b.position.y = 3.3; t.add(b);
     const c = new THREE.Mesh(cone, mat); c.position.y = 4.9; c.scale.setScalar(.72); t.add(c);
-    t.scale.setScalar(.8 + Math.random()*.7); t.rotation.y = Math.random()*6;
+    t.scale.setScalar(.8 + rnd()*.7); t.rotation.y = rnd()*6;
     t.position.set(x, 0, -y); t.traverse(o => o.castShadow = true);
     scene.add(t); placed++;
   }
