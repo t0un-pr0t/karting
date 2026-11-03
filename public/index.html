@@ -2350,14 +2350,14 @@ const SES = (() => {
    Une roue qui passe dans la flaque d'un autre pilote devient glissante 15 s (marron sur l'affichage des pneus)
    et le pilote, contaminé, vomit 15 s plus tard (flaque jaune, contagieuse elle aussi). Flaques partagées via le serveur. */
 const MESS = (() => {
-  const POO_N = 6, SLIP_MS = 15000, SICK_MS = 15000, LIFE = 90000, IMMUNE_LAPS = 3;
+  const POO_N = 6, POO_WIN = 20000, POO_COOL = 45000, SLIP_MS = 4000, SICK_MS = 15000, LIFE = 30000, MAX_POOLS = 12, EMIT_GAP = 1600, IMMUNE_LAPS = 5;   // EMIT_GAP > limite serveur (1,5 s)
   const KIND = [
     { r: .62, col: 0x5a3712, lump: 0x3e250b, hud: '#7a4a17', name: 'chiasse' },
     { r: .72, col: 0xb7ad3c, lump: 0xd88a3a, hud: '#b5b03a', name: 'vomi' },
   ];
   const WH = [[.46, .44], [.46, -.44], [-.55, .5], [-.55, -.5]];   // AVG, AVD, ARG, ARD (x avant, latéral + = gauche)
   const pools = [], wheel = [null, null, null, null];
-  let drifts = 0, prevDrift = 0, sick = null, immune = -1, lastPhase = '';
+  let drifts = [], pooAt = -1e9, prevDrift = 0, sick = null, immune = -1, lastPhase = '', lastEmit = -1e9;
   const lapNo = () => { const r = SES._S.r; return r ? r.n : st.lap; };   // tours bouclés (Grand Prix, sinon chrono)
   function mesh(k, seed) {
     const K = KIND[k], g = new THREE.Group(), sh = new THREE.Shape(), n = 14;
@@ -2370,31 +2370,35 @@ const MESS = (() => {
       const b = new THREE.Mesh(k ? new THREE.BoxGeometry(.07, .03, .05) : new THREE.SphereGeometry(.07, 8, 6), lm);
       const a = R()*6.28, d = R()*K.r*.55; b.position.set(Math.cos(a)*d, .02, Math.sin(a)*d); b.rotation.y = a; if (!k) b.scale.set(1.3, .45, 1); g.add(b);
     }
+    mergeInto(g);                                                     // flaque + grumeaux : 2 maillages au lieu de 6
     g.userData.mats = [m, lm]; return g;
   }
   function add(k, x, y, own, id) {
     const g = mesh(k, Math.floor(Math.abs(x*131 + y*71)) % 233280 + 1), { i } = nearestPathIndex(x, y);
     g.position.set(x, bankAt(x, y, i).h + .025, -y); g.rotation.y = Math.abs(x*7 + y*3) % 6.28; scene.add(g);
     pools.push({ k, x, y, own, id, g, t0: performance.now() });
-    if (pools.length > 40) drop(0);
+    while (pools.length > MAX_POOLS) drop(0);
   }
-  function drop(n) { const p = pools.splice(n, 1)[0]; scene.remove(p.g); p.g.traverse(o => o.geometry && o.geometry.dispose()); }
-  function emit(k) {
+  function drop(n) { const p = pools.splice(n, 1)[0]; scene.remove(p.g); p.g.traverse(o => o.geometry && o.geometry.dispose()); p.g.userData.mats.forEach(m => m.dispose()); }
+  function emit(k) {                                                   // false : trop tôt, le serveur la refuserait (les autres ne la verraient pas)
+    const now = performance.now(); if (now - lastEmit < EMIT_GAP) return false; lastEmit = now;
     const back = k ? .2 : -1.05, x = st.x + Math.cos(st.th)*back, y = st.y + Math.sin(st.th)*back;
-    add(k, x, y, true, MP.id()); MP.send({ t: 'mess', k, x, y });
+    add(k, x, y, true, MP.id()); MP.send({ t: 'mess', k, x, y }); return true;
   }
   function onNet(m) { if (m.id !== MP.id()) add(m.k ? 1 : 0, m.x, m.y, false, m.id); }
   function inRace() { const S = SES._S; return SES.phase() === 'race' && S.r && S.r.started && !S.myFin; }
   function update(now, dt) {
     const ph = SES.phase();
-    if (ph !== lastPhase) { if (ph === 'pregrid' || ph === 'results') { while (pools.length) drop(0); wheel.fill(null); sick = null; immune = -1; } drifts = 0; lastPhase = ph; }
+    if (ph !== lastPhase) { if (ph === 'pregrid' || ph === 'results') { while (pools.length) drop(0); wheel.fill(null); sick = null; immune = -1; } drifts = []; lastPhase = ph; }
     for (let n = pools.length - 1; n >= 0; n--) {          // évaporation : fondu sur les 5 dernières secondes
       const a = now - pools[n].t0; if (a > LIFE) { drop(n); continue; }
       if (a > LIFE - 5000) for (const m of pools[n].g.userData.mats) m.opacity = .95*(LIFE - a)/5000;
     }
-    // stress : compteur de drifts en Grand Prix
-    if (st.drift && !prevDrift && inRace() && ++drifts >= POO_N) {
-      drifts = 0; emit(0); toast('💩 Trop de drifts, le pilote panique… et se fait dessus !');
+    // stress : excès de drifts en Grand Prix (POO_N drifts en moins de POO_WIN)
+    if (st.drift && !prevDrift && inRace() && now - pooAt > POO_COOL) {   // soulagé : rien pendant POO_COOL
+      drifts.push(now); while (drifts.length && now - drifts[0] > POO_WIN) drifts.shift(); }
+    if (drifts.length >= POO_N && emit(0)) {
+      drifts = []; pooAt = now; toast('💩 Trop de drifts, le pilote panique… et se fait dessus !');
     }
     prevDrift = st.drift;
     // roues dans les flaques des autres pilotes
@@ -2404,11 +2408,11 @@ const MESS = (() => {
       const wx = st.x + WH[k][0]*c - WH[k][1]*s, wy = st.y + WH[k][0]*s + WH[k][1]*c;
       for (const p of pools) {
         if (p.own || Math.hypot(wx - p.x, wy - p.y) > KIND[p.k].r*.85) continue;
-        const fresh = !wheel[k]; wheel[k] = { k: p.k, until: now + SLIP_MS };
-        if (fresh && !sick && (immune < 0 || lapNo() >= immune)) { sick = { at: now + SICK_MS }; toast(`🤢 Roue dans la ${KIND[p.k].name} : elle glisse, et le pilote ne se sent pas bien…`); }
+        const fresh = !wheel[k]; wheel[k] = { k: p.k, until: now + SLIP_MS };   // seule la chiasse rend malade : le vomi glisse sans relancer la chaîne
+        if (fresh && !p.k && !sick && (immune < 0 || lapNo() >= immune)) { sick = { at: now + SICK_MS }; toast(`🤢 Roue dans la ${KIND[p.k].name} : elle glisse, et le pilote ne se sent pas bien…`); }
       }
     }
-    if (sick && now >= sick.at) { sick = null; immune = lapNo() + IMMUNE_LAPS; emit(1); toast('🤮 Le pilote vomit sur la piste !'); }
+    if (sick && now >= sick.at && emit(1)) { sick = null; immune = lapNo() + IMMUNE_LAPS; toast('🤮 Le pilote vomit sur la piste !'); }
   }
   const nSlip = () => wheel.reduce((a, w) => a + (w ? 1 : 0), 0);
   return {
