@@ -1839,12 +1839,12 @@ const SES = (() => {
 
   /* ---------- météo : intervalles de pluie [début, fin] en ms depuis le début de la session ---------- */
   function rainAt(t) { for (const [a, b] of S.wx) if (t >= S.t0 + a && t < S.t0 + b) return 1; return 0; }
-  function wetAt(t) {                     // la piste se mouille en 40 s et sèche en 90 s
+  function wetAt(t) {                     // la piste se mouille en 15 s (sauf pluie dès l'ouverture) et sèche en 30 s
     let w = 0;
     for (const [a0, b0] of S.wx) {
       const a = S.t0 + a0, b = S.t0 + b0; if (t < a) continue;
-      const up = Math.min(1, (Math.min(t, b) - a)/40000);
-      w = Math.max(w, t < b ? up : Math.max(0, up - (t - b)/90000));
+      const up = a0 <= 0 ? 1 : Math.min(1, (Math.min(t, b) - a)/15000);   // pluie dès l'ouverture : il pleuvait avant, la piste est déjà trempée
+      w = Math.max(w, t < b ? up : Math.max(0, up - (t - b)/30000));
     }
     return w;
   }
@@ -2672,15 +2672,16 @@ function animate(now) {
     camera.lookAt(kart.position.x + fwd.x*2, .8 + kart.position.y, kart.position.z + fwd.z*2);
   } else if (st.camMode === 1) {
     camera.position.set(kart.position.x + .01, 60, kart.position.z + 12); camera.lookAt(kart.position.x, 0, kart.position.z);
-  } else {                                                  // casque : l'œil derrière la visière, le kart penche et tangue avec lui
+  } else {                                                  // casque : l'œil juste devant la visière (casque : centre x −.33, r .14 ; visière jusqu'à −.17), le kart penche et tangue avec lui
     const body = kart.userData.body; body.updateMatrixWorld(true);
-    camera.position.copy(body.localToWorld(EYE.set(-.27, .92, 0))); camPos.copy(camera.position);
-    camera.up.copy(body.localToWorld(EYE_UP.set(-.27, 1.92, 0)).sub(camera.position));
-    camera.lookAt(body.localToWorld(EYE_AT.set(6, .55, 0)));
+    camera.position.copy(body.localToWorld(EYE.set(-.13, 1.02, 0))); camPos.copy(camera.position);
+    camera.up.copy(body.localToWorld(EYE_UP.set(-.13, 2.02, 0)).sub(camera.position));
+    camera.lookAt(body.localToWorld(EYE_AT.set(6, 1.06, 0)));
   }
   if (st.camMode !== 2) camera.up.set(0, 1, 0);
   if (VISOR.on !== (st.camMode === 2)) { VISOR.on = st.camMode === 2; $('visor').style.display = VISOR.on ? 'block' : 'none'; camera.near = VISOR.on ? .05 : .1; }
-  const fov = (st.camMode === 2 ? 70 : 62) + Math.abs(st.v)/MAXV*10 + (st.drift ? 4 : 0);
+  // casque : champ fixe (66°) — l'élargir avec la vitesse faisait entrer volant et gants noirs par le bas (à 38-40° sous l'œil)
+  const fov = st.camMode === 2 ? 66 : 62 + Math.abs(st.v)/MAXV*10 + (st.drift ? 4 : 0);
   camera.fov += (fov - camera.fov)*Math.min(1, 4*dt); camera.updateProjectionMatrix();
   sky.position.copy(camera.position);
   sun.target.position.copy(kart.position); sun.position.copy(kart.position).add(SUNOFF);
