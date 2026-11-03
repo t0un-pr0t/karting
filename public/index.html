@@ -108,7 +108,13 @@ kbd{background:#0006;border:1px solid #fff4;border-radius:3px;padding:0 5px;font
   background:#151317 repeating-linear-gradient(0deg,transparent 0 5px,#ffffff14 5px 7px)}
 .tw.f{width:22px;height:38px}.tw.r{width:30px;height:44px}
 .tw i{position:absolute;left:0;right:0;top:0;height:0;background:#9b8f86b0}
-@media(max-width:700px){#t4{transform:scale(.8);transform-origin:bottom right}}
+#tg{right:12px;padding:6px 8px 7px;font-size:11px;color:var(--dim);text-align:center}
+#tgw{position:relative;width:52px;height:130px;margin-top:4px}
+#tgb{position:absolute;left:0;top:0;bottom:0;width:14px;border-radius:7px;box-shadow:0 0 0 1px #fff4}
+#tgm{position:absolute;left:-3px;width:20px;height:3px;background:#fff;border-radius:2px;box-shadow:0 0 6px #000,0 0 0 1px #000a;transform:translateY(-50%)}
+#tgw small{position:absolute;left:19px;transform:translateY(-50%);font-variant-numeric:tabular-nums;white-space:nowrap}
+#tgv{font-weight:700;font-size:12px}
+@media(max-width:700px){#t4,#tg{transform:scale(.8);transform-origin:bottom right}}
 #tnx{display:none;margin-top:4px;font-size:12px;color:#ffd23f;white-space:normal}
 #slide{bottom:calc(205px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);padding:4px 14px;font-size:26px;color:#5cc8ff;display:none}
 #speedo{width:270px;z-index:2}
@@ -139,6 +145,7 @@ kbd{background:#0006;border:1px solid #fff4;border-radius:3px;padding:0 5px;font
   <div class="jn" id="jnote"></div>
 </form></div>
 <canvas id="minimap" class="p" width="200" height="160"></canvas>
+<div id="tg" class="p">🌡 Pneus<div id="tgw"><div id="tgb"></div><small id="tghi"></small><small id="tglo"></small><small id="tgv"></small><div id="tgm"></div></div></div>
 <div id="t4" class="p"><div class="t4h"><b id="t4c">Tendres</b><span id="t4t"></span></div><div id="t4s">📸 SNAPSHOT · pneus figés</div><div class="t4g">
 <div class="tc"><div class="tw f" id="tw0"><i></i></div><small id="tl0"></small></div><div class="tc"><div class="tw f" id="tw1"><i></i></div><small id="tl1"></small></div>
 <div class="tc"><div class="tw r" id="tw2"><i></i></div><small id="tl2"></small></div><div class="tc"><div class="tw r" id="tw3"><i></i></div><small id="tl3"></small></div>
@@ -2292,6 +2299,18 @@ const SES = (() => {
     $('tnm').textContent = C.name;
     { const band = ['#ff4a3d', '#0a0a0c', '#3aa0ff'][t.cp], ww = t.ww || [t.wear, t.wear, t.wear, t.wear];
       $('t4s').style.display = S.snap ? 'block' : 'none';
+      // jauge de température : froid (bleu) · fenêtre idéale (vert) · surchauffe (rouge), échelle propre à la gomme
+      { const lo = Math.max(0, C.lo - 50), hi = C.hi + 40, H = 130, y = v => (1 - Math.min(1, Math.max(0, (v - lo)/(hi - lo))))*H;
+        const pL = (C.lo - lo)/(hi - lo)*100, pH = (C.hi - lo)/(hi - lo)*100, key = t.cp + ':' + lo;
+        if (S.tgKey !== key) { S.tgKey = key;
+          $('tgb').style.background = `linear-gradient(0deg,#2f6fd6 0%,#7fb8ff ${pL}%,#38e07b ${pL}%,#38e07b ${pH}%,#ff9a3d ${pH}%,#ff453a 100%)`;
+          const a = $('tglo'), b = $('tghi'); a.textContent = C.lo + '°'; a.style.top = y(C.lo) + 'px'; b.textContent = C.hi + '°'; b.style.top = y(C.hi) + 'px'; }
+        const yt = y(t.temp); $('tgm').style.top = yt + 'px';
+        const v = $('tgv'); v.textContent = T + '°'; v.style.top = yt + 'px';
+        $('tglo').style.visibility = Math.abs(yt - y(C.lo)) < 12 ? 'hidden' : ''; $('tghi').style.visibility = Math.abs(yt - y(C.hi)) < 12 ? 'hidden' : '';
+        v.style.color = T < C.lo ? '#7fb8ff' : T > C.hi ? '#ff6b5a' : '#9be89b';
+        const tg = $('tg'), bt = innerHeight - $('t4').getBoundingClientRect().top + 8;
+        if (Math.abs(bt - (S.tgBot || 0)) > 1) { S.tgBot = bt; tg.style.bottom = Math.round(bt) + 'px'; } }
       $('t4c').textContent = C.name; $('t4c').style.color = t.cp === 1 ? 'var(--ink)' : C.col;
       const tt = $('t4t'); tt.textContent = (T < C.lo ? '❄ ' : '') + T + ' °C'; tt.style.color = T < C.lo ? '#7fb8ff' : T > C.hi ? '#ff6b5a' : '#9be89b';
       for (let k = 0; k < 4; k++) {
