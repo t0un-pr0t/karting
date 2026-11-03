@@ -214,16 +214,21 @@ function adaptRes(dt) {
   if (avg > 1/45 && PR.cur > .75) { PR.cur = Math.max(.75, PR.cur - .25); PR.good = 0; renderer.setPixelRatio(PR.cur); }
   else if (avg < 1/57 && PR.cur < PR.max && ++PR.good >= 4) { PR.cur = Math.min(PR.max, PR.cur + .25); PR.good = 0; renderer.setPixelRatio(PR.cur); }
 }
-/* Décor immobile : fusionne tous les maillages d'un groupe par matériau (un appel de dessin par matériau au lieu d'un par objet). */
-function mergeStatic(root) {
-  root.updateMatrixWorld(true);
-  const bins = new Map(), out = new THREE.Group();
-  root.traverse(o => {
-    if (!o.isMesh) return;
+/* Fusion de maillages immobiles les uns par rapport aux autres : un appel de dessin par matériau au lieu d'un par objet.
+   bakeMeshes(list, inv) : géométries ramenées dans le repère de matrice inverse inv (null = monde), regroupées par matériau. */
+function bakeMeshes(list, inv) {
+  const bins = new Map(), out = [], mt = new THREE.Matrix4();
+  for (const o of list) {
     const k = o.material.uuid + (o.castShadow ? 'c' : '') + (o.receiveShadow ? 'r' : '');
     if (!bins.has(k)) bins.set(k, { m: o.material, c: o.castShadow, r: o.receiveShadow, g: [] });
-    const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); g.applyMatrix4(o.matrixWorld); bins.get(k).g.push(g);
-  });
+    mt.copy(o.matrixWorld); if (inv) mt.premultiply(inv);
+    const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); g.applyMatrix4(mt);
+    if (mt.determinant() < 0) for (const at of Object.values(g.attributes)) {      // objet miroir : on retourne les triangles
+      const a = at.array, s = at.itemSize;
+      for (let v = 0; v + 2 < at.count; v += 3) for (let c = 0; c < s; c++) { const i1 = (v + 1)*s + c, i2 = (v + 2)*s + c, tmp = a[i1]; a[i1] = a[i2]; a[i2] = tmp; }
+    }
+    bins.get(k).g.push(g);
+  }
   for (const b of bins.values()) {
     const uv = b.g.every(g => g.attributes.uv), n = b.g.reduce((a, g) => a + g.attributes.position.count, 0), geo = new THREE.BufferGeometry();
     for (const [name, sz] of [['position', 3], ['normal', 3], ...(uv ? [['uv', 2]] : [])]) {
@@ -232,9 +237,24 @@ function mergeStatic(root) {
       geo.setAttribute(name, new THREE.BufferAttribute(arr, sz));
     }
     b.g.forEach(g => g.dispose()); geo.computeBoundingSphere();
-    const m = new THREE.Mesh(geo, b.m); m.castShadow = b.c; m.receiveShadow = b.r; m.matrixAutoUpdate = false; out.add(m);
+    const m = new THREE.Mesh(geo, b.m); m.castShadow = b.c; m.receiveShadow = b.r; out.push(m);
   }
   return out;
+}
+function mergeStatic(root) {               // décor : tout le groupe, en coordonnées monde
+  root.updateMatrixWorld(true);
+  const list = [], out = new THREE.Group(); root.traverse(o => { if (o.isMesh) list.push(o); });
+  for (const m of bakeMeshes(list, null)) { m.matrixAutoUpdate = false; out.add(m); }
+  return out;
+}
+/** Fusionne sur place les maillages sous parent (sauf les sous-arbres de skip, animés à part), dans le repère de parent. */
+function mergeInto(parent, skip = new Set()) {
+  parent.updateMatrixWorld(true);
+  const list = [], walk = o => { for (const c of o.children) { if (skip.has(c)) continue; if (c.isMesh) list.push(c); walk(c); } };
+  walk(parent);
+  const merged = bakeMeshes(list, new THREE.Matrix4().copy(parent.matrixWorld).invert());
+  for (const o of list) o.parent.remove(o);
+  for (const m of merged) parent.add(m);
 }
 /* Texte d'interface : n'écrit dans le DOM que si la valeur change (évite un recalcul de mise en page à chaque image). */
 { const d = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent');
@@ -1167,6 +1187,7 @@ function buildKart(color = 0xd01f1f, num = '2', suit = 0x1b4fa8) {
     const sw2 = new THREE.Mesh(new THREE.TorusGeometry(r*.93, r*.09, 6, 22), tm); sw2.rotation.x = Math.PI/2; sw2.position.y = Math.sign(z)*wd/2; sp.add(sw2);
     sp.add(new THREE.Mesh(new THREE.CylinderGeometry(r*.6, r*.6, wd+.012, 16), silver));
     for (let q = 0; q < 3; q++) { const b = new THREE.Mesh(new THREE.BoxGeometry(.025, wd+.02, r*1.15), dark); b.rotation.y = q*Math.PI/3; sp.add(b); }
+    mergeInto(sp);                          // pneu + flanc + jante + rayons : 3 appels de dessin au lieu de 6
     k.add(fork); fork.userData.spin = sp; if (front) fw.push(fork);
   };
   wheelAt(.46, .44, true); wheelAt(.46, -.44, true); wheelAt(-.55, .5, false); wheelAt(-.55, -.5, false);
@@ -1180,6 +1201,7 @@ function buildKart(color = 0xd01f1f, num = '2', suit = 0x1b4fa8) {
     g.fillStyle = 'rgba(240,240,240,.55)'; for (let q = 0; q < 26; q++) g.fillRect(30 + Math.random()*68, 30 + Math.random()*68, 4, 2);
   }) }));
   crack.position.set(.22, .225 - .22, 0); crack.rotation.x = -Math.PI/2; crack.visible = false; front.add(crack);
+  { mergeInto(k, new Set([front, ...k.children.filter(c => c.userData.spin)])); }   // châssis + pilote : un maillage par matériau
   root.userData = { fw, body: k, front: { g: front, nose, bumpF, bumpS, crack, x0: front.position.x, sx0: nose.scale.x, on: false } };
   return root;
 }
@@ -1471,7 +1493,7 @@ function updateGrip() {
 const MP = (() => {
   const PALETTE = [['#d01f1f', 'Rouge'], ['#1f6fd0', 'Bleu'], ['#1fa04a', 'Vert'], ['#f28c1c', 'Orange'], ['#8a3fd1', 'Violet'],
                    ['#e8c21a', 'Jaune'], ['#e8509a', 'Rose'], ['#19b5c4', 'Cyan'], ['#e9e9e9', 'Blanc'], ['#2a2a30', 'Noir']];
-  const INTERP_MS = 110, SEND_MS = 50;
+  const INTERP_MS = 110, INTERP_MAX = 450, SEND_MS = 50;   // retard d'affichage : 110 ms au moins, plus si la connexion de ce pilote est irrégulière
   const S = {
     ws: null, id: null, num: 2, name: '', color: '#d01f1f', online: false, wantOnline: false, retry: 0, full: false, joining: true,
     players: new Map(), recs: [], minLap: 20000, off: null, rtt: null, lastSend: 0, lastPing: 0, lastBump: 0, status: 'Hors ligne', idx: 0,
@@ -1589,9 +1611,11 @@ const MP = (() => {
     syncClock(m.ts);
     for (const a of m.p) {
       const e = S.players.get(a[0]); if (!e) continue;
-      const b = e.buf;
-      if (b.length && b[b.length-1].ts >= m.ts) continue;
-      b.push({ ts: m.ts, x: a[1], y: a[2], th: a[3], v: a[4], dr: a[5], sv: a[6], rp: a[7], dm: a[8] | 0 });
+      const b = e.buf, ts = a[12] || m.ts;
+      if (b.length && b[b.length-1].ts >= ts) continue;   // position déjà reçue : ne pas la redater (sinon arrêt puis saut)
+      const late = srvNow() - ts;                          // âge de l'échantillon à l'arrivée : monte vite, redescend lentement
+      e.lag = e.lag == null ? late : late > e.lag ? late : e.lag + (late - e.lag)*.02;
+      b.push({ ts, x: a[1], y: a[2], th: a[3], v: a[4], dr: a[5], sv: a[6], rp: a[7], dm: a[8] | 0 });
       if (b.length > 40) b.shift();
       e.rp = a[7]; e.fl = a[9] | 0; e.cp = a[10] | 0; e.wr = a[11] | 0;
     }
@@ -1606,7 +1630,7 @@ const MP = (() => {
       if (b[i].ts > t) continue;
       const a = b[i], c = b[i+1];
       if (!c) {                                                // pas encore de point suivant : courte extrapolation
-        const h = Math.min(.2, (t - a.ts)/1000);
+        const h = Math.min(.25, (t - a.ts)/1000);
         return { x: a.x + Math.cos(a.th)*a.v*h, y: a.y + Math.sin(a.th)*a.v*h, th: a.th, v: a.v, dr: a.dr, sv: a.sv, rp: a.rp, dm: a.dm };
       }
       const k = (t - a.ts)/((c.ts - a.ts) || 1);
@@ -1621,9 +1645,11 @@ const MP = (() => {
     return bd > 225 ? nearestPathIndex(x, y).i : bi;
   }
   function renderRemotes(now, dt) {
-    const t = srvNow() - INTERP_MS, myG = SES.group(S.id);
+    const tNow = srvNow(), myG = SES.group(S.id);
     for (const e of S.players.values()) {
-      const s = sample(e, t);
+      const want = Math.min(INTERP_MAX, Math.max(INTERP_MS, (e.lag || 0) + SEND_MS + 20));
+      e.delay = e.delay == null ? want : e.delay + Math.max(-dt*100, Math.min(dt*400, want - e.delay));   // le retard glisse sans à-coup
+      const s = sample(e, tNow - e.delay);
       if (!s) { e.mesh.visible = false; e.rx = null; continue; }
       setGhost(e, SES.group(e.id) !== myG);
       e.mesh.visible = true; e.rx = s.x; e.ry = s.y; e.rth = s.th; e.rv = s.v;
@@ -1638,7 +1664,7 @@ const MP = (() => {
       m.userData.body.rotation.x = e.roll;
       const spin = s.v*dt/.17;
       m.userData.fw.forEach(w => { w.rotation.y = s.sv*.35*Math.min(1, Math.abs(s.v)/7); w.userData.spin.rotation.y += spin; });
-      if (s.dr && !e.ghost) {                                   // fumée de drift
+      if (s.dr && !e.ghost && camera.position.distanceToSquared(m.position) < 1600) {   // fumée de drift (karts à moins de 40 m)
         e.emit += dt;
         while (e.emit > .06) {
           e.emit -= .06;
@@ -1728,9 +1754,9 @@ const MP = (() => {
   function update(now, dt, idx, steer) {
     S.idx = idx;
     if (!S.online) return;
-    if (now - S.lastSend >= SEND_MS) {
-      S.lastSend = now;
-      send({ t: 's', x: +st.x.toFixed(2), y: +st.y.toFixed(2), th: +st.th.toFixed(3), v: +st.v.toFixed(2), dr: st.drift, sv: +steer.toFixed(2),
+    if (now - S.lastSend >= SEND_MS && S.off != null) {
+      S.lastSend = now - Math.min(SEND_MS, now - S.lastSend - SEND_MS);   // cadence régulière même à 45 i/s
+      send({ t: 's', ts: Math.round(srvNow()), x: +st.x.toFixed(2), y: +st.y.toFixed(2), th: +st.th.toFixed(3), v: +st.v.toFixed(2), dr: st.drift, sv: +steer.toFixed(2),
              rp: +SES.myRp().toFixed(3), dm: st.dmg ? 1 : 0, fl: SES.flags(), cp: SES.compound(), wr: Math.round(SES.wear()*100) });
     }
     if (now - S.lastPing > 2000) { S.lastPing = now; send({ t: 'ping', c: now }); }
@@ -2238,7 +2264,7 @@ const SES = (() => {
       rpos.style.display = 'inline'; rpos.textContent = 'Position ' + pos + '/' + rows.length + (S.bueno ? ' · 🍫 boulet' : '');
     } else if (S.phase === 'formation' && isPart()) { rpos.style.display = 'inline'; rpos.textContent = 'Case P' + (myK() + 1) + (inSlot() ? ' ✔' : ''); }
     else rpos.style.display = 'none';
-    if (now - S.lastUi > 250) { S.lastUi = now; MP.panel(); }
+    if (now - S.lastUi > 500) { S.lastUi = now; MP.panel(); }
   }
 
   /* ---------- boucle ---------- */

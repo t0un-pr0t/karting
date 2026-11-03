@@ -299,7 +299,12 @@ function onMessage(p, raw) {
   switch (m.t) {
     case 's': // état du kart : [id, x, y, cap, vitesse, drift, braquage, progression, aileron cassé, drapeaux, gomme, usure %]
       p.s = [p.id, r2(num(m.x, 1000)), r2(num(m.y, 1000)), r2(num(m.th, 1e6)), r2(num(m.v, 60)), num(m.dr, 1) | 0, r2(num(m.sv, 1)),
-             Math.round(num(m.rp, 2000) * 1000) / 1000, m.dm ? 1 : 0, num(m.fl, 255) & 255, Math.max(0, Math.min(2, num(m.cp, 2) | 0)), Math.max(0, Math.min(100, Math.round(num(m.wr, 100))))];
+             Math.round(num(m.rp, 2000) * 1000) / 1000, m.dm ? 1 : 0, num(m.fl, 255) & 255, Math.max(0, Math.min(2, num(m.cp, 2) | 0)), Math.max(0, Math.min(100, Math.round(num(m.wr, 100)))), 0];
+      {                                        // horodatage à l'émission (horloge serveur estimée par le client), sinon à la réception
+        const ts = Number(m.ts), last = p.sTs || 0;
+        p.sTs = Number.isFinite(ts) && Math.abs(ts - now) < 1500 && ts > last ? Math.round(ts) : Math.max(now, last + 1);
+        p.s[12] = p.sTs;
+      }
       p.seen = now;
       break;
     case 'lap': { const ms = Math.round(num(m.ms, 3600000)); if (ms >= MIN_LAP_MS) onLap(p, ms); break; }
