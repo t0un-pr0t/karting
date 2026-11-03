@@ -2351,14 +2351,14 @@ const SES = (() => {
    Une roue qui passe dans la flaque d'un autre pilote devient glissante 15 s (marron sur l'affichage des pneus)
    et le pilote, contaminé, vomit 15 s plus tard (flaque jaune, contagieuse elle aussi). Flaques partagées via le serveur. */
 const MESS = (() => {
-  const POO_N = 7, POO_WIN = 20000, POO_COOL = 45000, SLIP_MS = 4000, SICK_MS = 15000, LIFE = 30000, MAX_POOLS = 12, EMIT_GAP = 1600, IMMUNE_LAPS = 5;   // EMIT_GAP > limite serveur (1,5 s)
+  const POO_N = 7, POO_COOL = 45000, SLIP_MS = 4000, SICK_MS = 15000, LIFE = 30000, MAX_POOLS = 12, EMIT_GAP = 1600, IMMUNE_LAPS = 5;   // EMIT_GAP > limite serveur (1,5 s)
   const KIND = [
     { r: .62, col: 0x6b4116, lump: 0x3e250b, rim: 0xffb347, hud: '#7a4a17', mm: '#c27a2c', name: 'chiasse' },
     { r: .72, col: 0xc4ba3c, lump: 0xd88a3a, rim: 0xf4ff6a, hud: '#b5b03a', mm: '#d6e04a', name: 'vomi' },
   ];
   const WH = [[.46, .44], [.46, -.44], [-.55, .5], [-.55, -.5]];   // AVG, AVD, ARG, ARD (x avant, latéral + = gauche)
   const pools = [], wheel = [null, null, null, null];
-  let drifts = [], pooAt = -1e9, prevDrift = 0, sick = null, immune = -1, lastPhase = '', lastEmit = -1e9;
+  let drifts = [], pooAt = -1e9, pooDue = 0, prevDrift = 0, sick = null, immune = -1, lastPhase = '', lastEmit = -1e9;
   const lapNo = () => { const r = SES._S.r; return r ? r.n : st.lap; };   // tours bouclés (Grand Prix, sinon chrono)
   function mesh(k, seed) {
     const K = KIND[k], g = new THREE.Group(), sh = new THREE.Shape(), n = 14;
@@ -2392,19 +2392,27 @@ const MESS = (() => {
     add(k, x, y, true, MP.id()); MP.send({ t: 'mess', k, x, y }); return true;
   }
   function onNet(m) { if (m.id !== MP.id()) add(m.k ? 1 : 0, m.x, m.y, false, m.id); }
+  function onStraight() {                                             // la piste reste droite sur les 15 m devant le kart
+    const i = nearestPathIndex(st.x, st.y).i, hd = j => { const a = PATH[j % N], b = PATH[(j + 1) % N]; return Math.atan2(b[1] - a[1], b[0] - a[0]); };
+    let j = i; while ((SL[j % N] - SL[i] + SL[N]) % SL[N] < 15 && j - i < N) j++;
+    return Math.abs(angDiff(hd(j), hd(i))) < .12;
+  }
   function inRace() { const S = SES._S; return SES.phase() === 'race' && S.r && S.r.started && !S.myFin; }
   function update(now, dt) {
     const ph = SES.phase();
-    if (ph !== lastPhase) { if (ph === 'pregrid' || ph === 'results') { while (pools.length) drop(0); wheel.fill(null); sick = null; immune = -1; } drifts = []; lastPhase = ph; }
+    if (ph !== lastPhase) { if (ph === 'pregrid' || ph === 'results') { while (pools.length) drop(0); wheel.fill(null); sick = null; immune = -1; } drifts = []; pooDue = 0; lastPhase = ph; }
     for (let n = pools.length - 1; n >= 0; n--) {          // évaporation : fondu sur les 5 dernières secondes
       const a = now - pools[n].t0; if (a > LIFE) { drop(n); continue; }
       if (a > LIFE - 5000) for (const m of pools[n].g.userData.mats) m.opacity = .95*(LIFE - a)/5000;
     }
-    // stress : excès de drifts en Grand Prix (POO_N drifts en moins de POO_WIN)
-    if (st.drift && !prevDrift && inRace() && now - pooAt > POO_COOL) {   // soulagé : rien pendant POO_COOL
-      drifts.push(now); while (drifts.length && now - drifts[0] > POO_WIN) drifts.shift(); }
-    if (drifts.length >= POO_N && emit(0)) {
-      drifts = []; pooAt = now; toast('💩 Trop de drifts, le pilote panique… et se fait dessus !');
+    // stress : excès de drifts en Grand Prix (POO_N drifts sur le dernier tour parcouru)
+    if (st.drift && !prevDrift && inRace() && now - pooAt > POO_COOL && !pooDue) {   // soulagé : rien pendant POO_COOL
+      const rp = SES.myRp(); drifts.push(rp); while (drifts.length && rp - drifts[0] > 1) drifts.shift();
+      if (drifts.length >= POO_N) pooDue = now + 6000;                 // ça presse… mais il se retient jusqu'à la ligne droite
+    }
+    if (pooDue && !inRace()) { pooDue = 0; drifts = []; }
+    if (pooDue && ((!st.drift && onStraight()) || now > pooDue) && emit(0)) {
+      drifts = []; pooDue = 0; pooAt = now; toast('💩 Trop de drifts, le pilote panique… et se fait dessus !');
     }
     prevDrift = st.drift;
     // roues dans les flaques des autres pilotes
