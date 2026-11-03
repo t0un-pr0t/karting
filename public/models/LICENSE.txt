@@ -1,0 +1,2 @@
+safety-car.glb = sedanSports.glb du « Car Kit » de Kenney (www.kenney.nl), licence CC0 1.0 (domaine public).
+https://kenney.nl/assets/car-kit — https://creativecommons.org/publicdomain/zero/1.0/

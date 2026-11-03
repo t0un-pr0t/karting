@@ -75,6 +75,8 @@ function addStatic(url, file, type, cache) {
 }
 addStatic('/', path.join(__dirname, 'public', 'index.html'), 'text/html; charset=utf-8', 'no-cache');
 addStatic('/three.min.js', require.resolve('three/build/three.min.js'), 'text/javascript; charset=utf-8', 'public, max-age=604800, immutable');
+addStatic('/GLTFLoader.js', require.resolve('three/examples/js/loaders/GLTFLoader.js'), 'text/javascript; charset=utf-8', 'public, max-age=604800, immutable');
+addStatic('/models/safety-car.glb', path.join(__dirname, 'public', 'models', 'safety-car.glb'), 'model/gltf-binary', 'public, max-age=86400');   // Kenney Car Kit, CC0
 
 /* ---------- records (meilleur tour par pilote) ---------- */
 let records = [];

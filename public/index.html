@@ -142,6 +142,7 @@ kbd{background:#0006;border:1px solid #fff4;border-radius:3px;padding:0 5px;font
 
 <script src="three.min.js"></script>
 <script>window.THREE || document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>')</script>
+<script src="GLTFLoader.js"></script>
 <script>
 /* 1. TRACÉ — sens INVERSÉ : on garde le départ (0,0) puis on parcourt les points à rebours */
 const PTS0 = [
@@ -836,9 +837,10 @@ const PITS = (() => {
     lamps.forEach((p, k) => p.forEach(l => l.material.color.set(k < n ? 0xff1d1d : 0x2a0707)));
   }
 
-  /* ---- safety car : modèle original (citadine, rampe lumineuse, livrée damier) ---- */
+  /* ---- safety car : berline sport « sedanSports » du Car Kit de Kenney (CC0), livrée blanche à damier, rampe lumineuse.
+     En attendant le chargement du modèle (ou s'il échoue), on affiche l'ancienne citadine faite en code. ---- */
   const sc = new THREE.Group(); scene.add(sc);
-  const scLights = [];
+  const scLights = [], scWheels = [], scProc = new THREE.Group(); sc.add(scProc);
   {
     const white = M(0xf3f1ec, .35, .15), glass = M(0x1e2a33, .15, .7), dark = M(0x18181c, .7), tyreM = M(0x111111, .9);
     const side = new THREE.MeshStandardMaterial({ roughness: .4, map: tex(512, 128, (g, w, h) => {
@@ -847,7 +849,7 @@ const PITS = (() => {
       g.fillStyle = '#1b1420'; g.font = 'italic bold 40px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('SAFETY CAR', w/2, 30);
     }) });
     const sideL = side.clone(); sideL.map = side.map.clone(); sideL.map.needsUpdate = true; sideL.map.repeat.x = -1; sideL.map.offset.x = 1;
-    const add = (geo, mat, x, y, z, rz = 0) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); o.rotation.z = rz; o.castShadow = true; sc.add(o); return o; };
+    const add = (geo, mat, x, y, z, rz = 0) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); o.rotation.z = rz; o.castShadow = true; scProc.add(o); return o; };
     add(new THREE.BoxGeometry(3.5, .56, 1.62), [white, white, white, dark, side, sideL], 0, .62, 0);
     add(new THREE.BoxGeometry(1.05, .14, 1.56), white, 1.15, .96, 0, -.1);              // capot
     add(new THREE.BoxGeometry(1.75, .5, 1.42), glass, -.38, 1.14, 0);                   // vitres
@@ -860,6 +862,27 @@ const PITS = (() => {
     add(new THREE.BoxGeometry(.32, .1, 1.1), dark, -.35, 1.51, 0);                      // rampe lumineuse
     for (const z of [.36, -.36]) { const l = add(new THREE.BoxGeometry(.26, .1, .3), new THREE.MeshBasicMaterial({ color: 0x5a3a00 }), -.35, 1.57, z); scLights.push(l); }
     for (const x of [1.12, -1.12]) for (const z of [.74, -.74]) { const w = add(new THREE.CylinderGeometry(.33, .33, .24, 18), tyreM, x, .33, z); w.rotation.x = Math.PI/2; }
+    if (THREE.GLTFLoader) new THREE.GLTFLoader().load('models/safety-car.glb', gl => {
+      const car = gl.scene, S = 1.4;                  // 2,5 m -> 3,5 m ; le modèle regarde vers -z, la safety car vers +x
+      car.scale.setScalar(S); car.rotation.y = -Math.PI/2;
+      car.traverse(o => {
+        if (/^wheel_/.test(o.name)) scWheels.push(o);
+        if (!o.isMesh) return;
+        o.castShadow = true;
+        const n = o.material.name;
+        if (n === 'paintRed') o.material = white;
+        else if (n === 'window') o.material = glass;
+        else if (n === 'plastic') o.material = dark;
+      });
+      sc.add(car);
+      // livrée : bandeau « SAFETY CAR » à damier sur les portières
+      for (const s of [1, -1]) { const d = new THREE.Mesh(new THREE.PlaneGeometry(1.7, .43), new THREE.MeshStandardMaterial({ map: side.map, roughness: .4, transparent: true, polygonOffset: true, polygonOffsetFactor: -2 }));
+        d.position.set(-.1, .64, s*.925); d.rotation.y = s > 0 ? 0 : Math.PI; sc.add(d); }
+      // rampe lumineuse sur le pavillon (les deux feux clignotants existants y sont déplacés)
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(.3, .09, 1.05), dark); bar.position.set(-.25, 1.58, 0); bar.castShadow = true; sc.add(bar);
+      scLights.forEach((l, k) => { l.position.set(-.25, 1.65, k ? -.32 : .32); sc.add(l); });
+      sc.remove(scProc);
+    }, undefined, e => console.warn('safety car : modèle non chargé, citadine de secours', e));
   }
   /* trajet du tour de formation : départ devant la pole, un tour à 45 km/h, entrée au stand, place réservée */
   const SC_S0 = GRID_FRONT + 9, SC_V = 12.5, PIT_V = 8.3;
@@ -895,6 +918,7 @@ const PITS = (() => {
     scState.v = Math.abs(d - prev) / .016; scState.d = d; scState.x = p.x; scState.y = p.y; scState.th = p.th;
     scState.moving = d > 0 && d < DTOT; scState.onTrackS = d < DPIT ? (SC_S0 + d) % L : null;
     sc.position.set(p.x, 0, -p.y); sc.rotation.y = p.th;
+    for (const w of scWheels) w.rotation.x -= (d - prev)/.42;   // roues : rayon 0,3 m × 1,4 (le modèle avance vers −z)
     const blink = scState.moving || ready ? (Math.floor(now/350) % 2) : -1;
     scLights[0].material.color.set(blink === 0 ? 0xffa000 : 0x5a3a00); scLights[1].material.color.set(blink === 1 ? 0xffa000 : 0x5a3a00);
   }
@@ -904,7 +928,7 @@ const PITS = (() => {
     const dx = st.x - scState.x, dy = st.y - scState.y, d = Math.hypot(dx, dy);
     if (d > 4 || d < 1e-3) return;
     const nx = dx/d, ny = dy/d, ext = (th, a, b) => a*Math.abs(Math.cos(th)*nx + Math.sin(th)*ny) + b*Math.abs(-Math.sin(th)*nx + Math.cos(th)*ny);
-    const R = ext(st.th, 1.08, .6) + ext(scState.th, 1.76, .82);
+    const R = ext(st.th, 1.08, .6) + ext(scState.th, 1.76, .92);
     if (d >= R) return;
     st.x += nx*(R - d); st.y += ny*(R - d);
     const vx = Math.cos(st.vd)*st.v, vy = Math.sin(st.vd)*st.v, rel = vx*nx + vy*ny;
