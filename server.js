@@ -309,6 +309,11 @@ function onMessage(p, raw) {
       break;
     }
     case 'tires': onTires(p, m.u); break;
+    case 'mess': {                                   // flaque (0 = chiasse, 1 = vomi) relayée aux autres pilotes
+      if (now - (p.messAt || 0) < 1500) break; p.messAt = now;
+      broadcast({ t: 'mess', k: m.k ? 1 : 0, x: r2(num(m.x, 1000)), y: r2(num(m.y, 1000)), id: p.id }, p);
+      break;
+    }
     case 'ping': send(p.ws, { t: 'pong', c: num(m.c, 1e12) }); break;
   }
 }
