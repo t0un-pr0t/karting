@@ -258,7 +258,7 @@ function onRaceLap(p, m) {
   if (n > 1 && !m.bad && ms >= MIN_LAP_MS * 0.85) pt.best = pt.best == null ? ms : Math.min(pt.best, ms);
   if (!r.cheq && now >= r.go + GP_MS) {                               // temps écoulé : drapeau à damier au passage du leader
     const others = [...r.parts.values()].filter(q => q !== pt && !q.left).map(q => q.n);
-    if (!others.length || pt.n >= Math.max(...others)) r.cheq = now;
+    if (!others.length || pt.n > Math.max(...others)) r.cheq = now;    // strictement : un ex æquo a franchi la ligne avant lui, il est devant
   }
   if (r.cheq) {
     const srvT = now - r.go, cli = num(m.total, 36000000);
