@@ -1452,6 +1452,7 @@ function drawTrackLayer() {
 }
 function drawLive() {
   for (const d of items) { if (d.pop >= 0) continue; mm.fillStyle = '#' + d.col.toString(16).padStart(6, '0'); mm.beginPath(); mm.arc(mmX(d.x), mmY(d.y), d.gold ? 3.5 : 2.6, 0, 7); mm.fill(); }
+  MESS.drawMinimap(mm);
   MP.drawMinimap(mm);
   mm.save(); mm.translate(mmX(st.x), mmY(st.y)); mm.rotate(-st.th);
   mm.fillStyle = st.drift ? '#ff5a36' : '#fff'; mm.beginPath(); mm.moveTo(6, 0); mm.lineTo(-4, 4); mm.lineTo(-2, 0); mm.lineTo(-4, -4); mm.fill(); mm.restore();
@@ -2352,8 +2353,8 @@ const SES = (() => {
 const MESS = (() => {
   const POO_N = 6, POO_WIN = 20000, POO_COOL = 45000, SLIP_MS = 4000, SICK_MS = 15000, LIFE = 30000, MAX_POOLS = 12, EMIT_GAP = 1600, IMMUNE_LAPS = 5;   // EMIT_GAP > limite serveur (1,5 s)
   const KIND = [
-    { r: .62, col: 0x5a3712, lump: 0x3e250b, hud: '#7a4a17', name: 'chiasse' },
-    { r: .72, col: 0xb7ad3c, lump: 0xd88a3a, hud: '#b5b03a', name: 'vomi' },
+    { r: .62, col: 0x6b4116, lump: 0x3e250b, rim: 0xffb347, hud: '#7a4a17', mm: '#c27a2c', name: 'chiasse' },
+    { r: .72, col: 0xc4ba3c, lump: 0xd88a3a, rim: 0xf4ff6a, hud: '#b5b03a', mm: '#d6e04a', name: 'vomi' },
   ];
   const WH = [[.46, .44], [.46, -.44], [-.55, .5], [-.55, -.5]];   // AVG, AVD, ARG, ARD (x avant, latéral + = gauche)
   const pools = [], wheel = [null, null, null, null];
@@ -2363,15 +2364,20 @@ const MESS = (() => {
     const K = KIND[k], g = new THREE.Group(), sh = new THREE.Shape(), n = 14;
     let rnd = seed; const R = () => (rnd = (rnd*9301 + 49297) % 233280)/233280;
     for (let i = 0; i <= n; i++) { const a = i/n*Math.PI*2, r = K.r*(.7 + .45*R()); i ? sh.lineTo(Math.cos(a)*r, Math.sin(a)*r*.8) : sh.moveTo(Math.cos(a)*r, Math.sin(a)*r*.8); }
-    const m = new THREE.MeshStandardMaterial({ color: K.col, roughness: .12, metalness: .05, transparent: true, opacity: .95, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    const m = new THREE.MeshStandardMaterial({ color: K.col, emissive: K.col, emissiveIntensity: .35, roughness: .12, metalness: .05, transparent: true, opacity: .95, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
     const p = new THREE.Mesh(new THREE.ShapeGeometry(sh), m); p.rotation.x = -Math.PI/2; p.receiveShadow = true; g.add(p);
+    // liseré clair autour de la flaque : visible de loin, même vue en rasant depuis la caméra
+    const hm = new THREE.MeshBasicMaterial({ color: K.rim, transparent: true, opacity: .95, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    const pts = sh.getPoints(), ring = new THREE.Shape(pts.map(v => v.clone().multiplyScalar(1.18)));   // anneau : rien ne se superpose à la flaque
+    ring.holes.push(new THREE.Path(pts.slice().reverse()));
+    const h = new THREE.Mesh(new THREE.ShapeGeometry(ring), hm); h.rotation.x = -Math.PI/2; g.add(h);
     const lm = new THREE.MeshStandardMaterial({ color: K.lump, roughness: .3, transparent: true });
     for (let i = 0; i < 5; i++) {
-      const b = new THREE.Mesh(k ? new THREE.BoxGeometry(.07, .03, .05) : new THREE.SphereGeometry(.07, 8, 6), lm);
-      const a = R()*6.28, d = R()*K.r*.55; b.position.set(Math.cos(a)*d, .02, Math.sin(a)*d); b.rotation.y = a; if (!k) b.scale.set(1.3, .45, 1); g.add(b);
+      const b = new THREE.Mesh(k ? new THREE.BoxGeometry(.1, .08, .07) : new THREE.SphereGeometry(.1, 8, 6), lm);
+      const a = R()*6.28, d = R()*K.r*.55; b.position.set(Math.cos(a)*d, .02, Math.sin(a)*d); b.rotation.y = a; if (!k) b.scale.set(1.3, .8, 1); g.add(b);
     }
     mergeInto(g);                                                     // flaque + grumeaux : 2 maillages au lieu de 6
-    g.userData.mats = [m, lm]; return g;
+    g.userData.mats = [m, hm, lm]; return g;
   }
   function add(k, x, y, own, id) {
     const g = mesh(k, Math.floor(Math.abs(x*131 + y*71)) % 233280 + 1), { i } = nearestPathIndex(x, y);
@@ -2407,7 +2413,7 @@ const MESS = (() => {
       if (wheel[k] && now > wheel[k].until) wheel[k] = null;
       const wx = st.x + WH[k][0]*c - WH[k][1]*s, wy = st.y + WH[k][0]*s + WH[k][1]*c;
       for (const p of pools) {
-        if (p.own || Math.hypot(wx - p.x, wy - p.y) > KIND[p.k].r*.85) continue;
+        if (p.own || Math.hypot(wx - p.x, wy - p.y) > KIND[p.k].r*.6) continue;   // il faut rouler dedans, pas l'effleurer
         const fresh = !wheel[k]; wheel[k] = { k: p.k, until: now + SLIP_MS };   // seule la chiasse rend malade : le vomi glisse sans relancer la chaîne
         if (fresh && !p.k && !sick && (immune < 0 || lapNo() >= immune)) { sick = { at: now + SICK_MS }; toast(`🤢 Roue dans la ${KIND[p.k].name} : elle glisse, et le pilote ne se sent pas bien…`); }
       }
@@ -2417,6 +2423,7 @@ const MESS = (() => {
   const nSlip = () => wheel.reduce((a, w) => a + (w ? 1 : 0), 0);
   return {
     update, onNet,
+    drawMinimap: c => { for (const p of pools) { c.fillStyle = KIND[p.k].mm; c.beginPath(); c.arc(mmX(p.x), mmY(p.y), 2.2, 0, 7); c.fill(); } },
     grip: () => 1 - .13*nSlip(),                                        // jusqu'à −52 % d'adhérence latérale, 4 roues touchées
     wobble: now => { const n = nSlip(); return n ? .09*n*Math.sin(now/110) + .05*n*Math.sin(now/37) : 0; },   // le kart louvoie
     wheel: k => wheel[k] ? KIND[wheel[k].k].hud : null,
