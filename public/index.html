@@ -1865,6 +1865,7 @@ const SES = (() => {
   function wearGrip(w) { return w <= CLIFF ? 1 - .10*w/CLIFF : Math.max(.45, .90 - 1.7*(w - CLIFF)); }
   function tempGrip(c, T) { const C = CP[c], a = amb(); return T < C.lo ? .78 + .22*Math.min(1, Math.max(0, (T - a)/(C.lo - a))) : T > C.hi ? Math.max(.7, 1 - .012*(T - C.hi)) : 1; }
   const effWear = t => .5*t.wear + .5*Math.max(...t.ww);   // le pneu le plus usé pèse autant que la moyenne des 4
+  function overheat() { const t = S.tyre; return Math.max(0, Math.min(1, (t.temp - CP[t.cp].hi)/30)); }   // 0 dans la plage → 1 à hi + 30 °C
   function gripMul() { const t = S.tyre, f = t.flat >= 0 ? FLAT_GRIP : 1; return f*(strict() ? peak(t.cp)*wearGrip(effWear(t))*tempGrip(t.cp, t.temp) : peak(t.cp)); }
   const accMul = () => .85 + .15*Math.min(1, gripMul());
   function dragMul() {                    // le facteur d'accélération ne change pas la vitesse de pointe ; pneus pluie −15 % ; boulet −5 km/h
@@ -1886,9 +1887,14 @@ const SES = (() => {
     const v = Math.abs(st.v), t = S.tyre, yaw = angDiff(st.th, S.prevTh)/dt, aLat = Math.min(30, Math.abs(v*yaw));
     S.prevTh = st.th;
     const heat = .0085*v*v + .02*aLat*v + 2*Math.abs(slip)*v + (brk ? .04*v : 0) + (st.drift ? 3 : 0) + 4*S.slide;
-    const cool = (t.temp - amb())*(.03 + .003*v)*(isWet() ? 2 : 1);
+    // au-dessus de la plage (hi), l'excédent ne s'évacue qu'à 35 % : un pneu surchauffé met un tour propre à redescendre,
+    // et reste chaud si l'on continue de drifter (cercle vicieux : chaud → drift plus facile → encore plus chaud)
+    const kc = (.03 + .003*v)*(isWet() ? 2 : 1), cool = kc*(t.temp - amb()) - .65*kc*Math.max(0, t.temp - CP[t.cp].hi);
     const inert = t.temp < CP[t.cp].lo ? COLD_INERT : 1;   // pneu froid : la carcasse met du temps à monter en température
     t.temp = Math.max(-5, Math.min(160, t.temp + (heat - cool)*dt*inert));
+    const oh = overheat();
+    if (oh > .5 && !S.hotWarn) { S.hotWarn = true; toast('🔥 Pneus en surchauffe : ils décrochent plus facilement. Roulez propre, sans drift, pour les refroidir'); }
+    else if (oh === 0) S.hotWarn = false;
     if (!strict() || S.svc || S.snap) return;           // bonus Snapshot : usure figée jusqu'au prochain passage de la ligne
     const C = CP[t.cp], mult = 1 + 3.5*Math.min(1, Math.abs(slip)/.5) + (st.drift ? DRIFT_WEAR : 0) + 1.5*S.slide;
     const hot = t.temp > C.hi ? 1 + .06*(t.temp - C.hi) : 1, comp = t.cp === 2 && !isWet() ? C.dryWear : C.wear;
@@ -2347,7 +2353,7 @@ const SES = (() => {
   freshTyres(0, 70);
   return {
     onSess, update, hud, frozen, onReset, lineCross, cutPenalty, flags, group, myRp, buildPanel, drawMinimap,
-    gripMul, accMul, dragMul, puncture, flat: () => S.tyre.flat, speedCap, slideUpdate, isWet, damageOn: strict, compound: () => S.tyre.cp, wear: () => S.tyre.wear,
+    gripMul, overheat, accMul, dragMul, puncture, flat: () => S.tyre.flat, speedCap, slideUpdate, isWet, damageOn: strict, compound: () => S.tyre.cp, wear: () => S.tyre.wear,
     phase: () => S.phase, _S: S, CP,
   };
 })();
@@ -2580,9 +2586,10 @@ function animate(now) {
   /* drift automatique : braquage maintenu trop longtemps à vive allure */
   const steer = Math.max(-1, Math.min(1, (lf ? 1 : 0) - (rt ? 1 : 0) + (frz ? 0 : pad.steer)));   // analogique avec la manette
   const steerIn = Math.abs(steer) > .5 ? Math.sign(steer) : 0;
-  if (steerIn && steerIn === st.holdDir && st.v > DRIFT_SPEED) st.hold += dt; else st.hold = 0;
+  const oh = SES.overheat();                                   // pneus surchauffés : le kart décroche plus tôt et plus vite
+  if (steerIn && steerIn === st.holdDir && st.v > DRIFT_SPEED*(1 - .14*oh)) st.hold += dt; else st.hold = 0;
   st.holdDir = steerIn;
-  if (!st.drift && st.hold > DRIFT_HOLD) { st.drift = steerIn; st.rel = 0; }
+  if (!st.drift && st.hold > DRIFT_HOLD*(1 - .45*oh)) { st.drift = steerIn; st.rel = 0; }
   if (st.drift) {
     st.rel = steerIn === st.drift ? 0 : st.rel + dt;          // lâcher / contre-braquer termine le drift
     st.v -= st.v*.3*dt;
