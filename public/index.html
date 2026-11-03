@@ -394,10 +394,21 @@ function distToPath(x, y) {
 // Ligne d'arrivée + portique
 const START_TH = Math.atan2(PATH[2][1]-PATH[0][1], PATH[2][0]-PATH[0][0]);
 {
-  const ck = tex(14, 2, (g) => { for (let x = 0; x < 14; x++) for (let y = 0; y < 2; y++) { g.fillStyle = (x+y)%2 ? '#15121a' : '#fff'; g.fillRect(x,y,1,1); } });
-  ck.magFilter = THREE.NearestFilter;
-  { const sl = new THREE.Mesh(ribbon(PATH.slice(0,3), -HALF_W, HALF_W, 0.05, 1, false), L2(ck, -4)); sl.renderOrder = 1; scene.add(sl); }
-  const c = M2W(PATH[0][0], PATH[0][1]), n3 = new THREE.Vector3(-Math.sin(START_TH), 0, -Math.cos(START_TH));
+  // damier au sol : 16 colonnes × 3 rangs de cases carrées (≈ 44 cm) + liserés blancs, centré sur la ligne, perpendiculaire à la piste
+  const c = M2W(PATH[0][0], PATH[0][1]);
+  { const COLS = 16, ROWS = 3, W = HALF_W*2, cell = W/COLS, D = cell*ROWS + .2, PX = 128;      // D : 3 rangs + 2 liserés de 10 cm
+    const cw = Math.round(D/cell*PX), ch = COLS*PX, edge = Math.round(.1/cell*PX);
+    const ck = tex(cw, ch, (g) => {
+      g.fillStyle = '#f4f4f0'; g.fillRect(0, 0, cw, ch);
+      g.fillStyle = '#121016';
+      for (let r = 0; r < ROWS; r++) for (let k = 0; k < COLS; k++) if ((r + k) % 2) g.fillRect(edge + r*PX, k*PX, PX, PX);
+    });
+    ck.wrapS = ck.wrapT = THREE.ClampToEdgeWrapping; ck.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    ck.minFilter = THREE.LinearMipmapLinearFilter; ck.magFilter = THREE.LinearFilter;
+    const geo = new THREE.PlaneGeometry(D, W); geo.rotateX(-Math.PI/2);
+    const sl = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: ck, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
+    sl.position.copy(c); sl.position.y = .025; sl.rotation.y = START_TH; sl.receiveShadow = true; sl.renderOrder = 1; scene.add(sl); }
+  const n3 = new THREE.Vector3(-Math.sin(START_TH), 0, -Math.cos(START_TH));
   const poleMat = new THREE.MeshStandardMaterial({ color: 0xe6e0d6, roughness: .5, metalness: .4 });
   for (const s of [-1, 1]) {
     const p = new THREE.Mesh(new THREE.BoxGeometry(.22, 2.6, .22), poleMat);
