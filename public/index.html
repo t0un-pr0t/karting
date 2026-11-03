@@ -1966,7 +1966,8 @@ const SES = (() => {
     if (dt <= 0) return;
     const v = Math.abs(st.v), t = S.tyre, yaw = angDiff(st.th, S.prevTh)/dt, aLat = Math.min(30, Math.abs(v*yaw));
     S.prevTh = st.th;
-    const heat = .0085*v*v + .02*aLat*v + 2*Math.abs(slip)*v + (brk ? .04*v : 0) + (st.drift ? 3 : 0) + 4*S.slide;
+    // 75 km/h + adhérence 18 : chauffe vitesse/appui ×0,75 → même équilibre qu’avant sur un tour propre (≈ 84 °C en tendres)
+    const heat = .0064*v*v + .015*aLat*v + 2*Math.abs(slip)*v + (brk ? .04*v : 0) + (st.drift ? 3 : 0) + 4*S.slide;
     // au-dessus de la plage (hi), l'excédent ne s'évacue qu'à 35 % : un pneu surchauffé met un tour propre à redescendre,
     // et reste chaud si l'on continue de drifter (cercle vicieux : chaud → drift plus facile → encore plus chaud)
     const kc = (.03 + .003*v)*(isWet() ? 2 : 1), cool = kc*(t.temp - amb()) - .65*kc*Math.max(0, t.temp - CP[t.cp].hi);
